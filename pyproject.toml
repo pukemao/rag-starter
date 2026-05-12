@@ -1,0 +1,28 @@
+[project]
+name = "rag-starter"
+version = "0.1.0"
+description = "LangChain-based document loader helpers for RAG projects."
+requires-python = ">=3.11"
+dependencies = [
+    "langchain-community",
+    "langchain-core",
+]
+
+[project.optional-dependencies]
+loaders = [
+    "beautifulsoup4",
+    "jq",
+    "nbformat",
+    "openpyxl",
+    "pillow",
+    "pypdf",
+    "pysrt",
+    "pytesseract",
+    "python-docx",
+    "python-pptx",
+    "unstructured[all-docs]",
+]
+dev = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
