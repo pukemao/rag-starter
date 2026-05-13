@@ -218,7 +218,7 @@ class VectorStoreService:
             item = grouped.setdefault(
                 key,
                 {
-                    "filename": str(metadata.get("filename") or source),
+                    "filename": source,
                     "source": source,
                     "source_id": str(source_id) if source_id else None,
                     "file_hash": str(file_hash) if file_hash else None,
