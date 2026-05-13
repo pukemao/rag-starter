@@ -47,6 +47,8 @@ class VectorStoreService:
         chunk_size: int = 1000,
         chunk_overlap: int = 200,
         splitter_kwargs: dict[str, Any] | None = None,
+        source_label: str | None = None,
+        source_id: str | None = None,
     ) -> list[str]:
         """Load, split, and add one local file."""
 
@@ -58,6 +60,18 @@ class VectorStoreService:
             chunk_overlap=chunk_overlap,
             splitter_kwargs=splitter_kwargs,
         )
+        if source_label or source_id:
+            chunks = [
+                Document(
+                    page_content=chunk.page_content,
+                    metadata=self._rewrite_metadata(
+                        chunk.metadata,
+                        source_label=source_label,
+                        source_id=source_id,
+                    ),
+                )
+                for chunk in chunks
+            ]
         return self.add_documents(chunks)
 
     def delete(self, *, ids: list[str] | None = None, source: str | None = None) -> int | None:
@@ -102,7 +116,21 @@ class VectorStoreService:
 
     @staticmethod
     def _document_id(document: Document, index: int) -> str:
-        source = str(document.metadata.get("source", "unknown"))
+        source = str(document.metadata.get("source_id") or document.metadata.get("source", "unknown"))
         payload = f"{source}:{index}:{document.page_content}".encode("utf-8")
         digest = hashlib.sha256(payload).hexdigest()
         return f"doc-{digest[:32]}"
+
+    @staticmethod
+    def _rewrite_metadata(
+        metadata: dict[str, Any],
+        *,
+        source_label: str | None = None,
+        source_id: str | None = None,
+    ) -> dict[str, Any]:
+        updated = dict(metadata)
+        if source_label is not None:
+            updated["source"] = source_label
+        if source_id is not None:
+            updated["source_id"] = source_id
+        return updated

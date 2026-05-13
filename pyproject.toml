@@ -10,6 +10,7 @@ dependencies = [
     "langchain-chroma",
     "langchain-core",
     "langchain-text-splitters",
+    "python-multipart",
     "uvicorn",
 ]
 

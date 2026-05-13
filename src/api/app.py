@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from fastapi import Depends, FastAPI, HTTPException
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from uuid import uuid4
+
+from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 
 from src.vector_store import VectorStoreService
 
@@ -11,6 +15,8 @@ from .schemas import (
     AddDocumentResponse,
     DeleteDocumentRequest,
     DeleteDocumentResponse,
+    IndexFileResponse,
+    IndexResponse,
     SearchRequest,
     SearchResponse,
     SearchResultResponse,
@@ -51,6 +57,52 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return AddDocumentResponse(ids=ids, count=len(ids))
+
+    @app.post("/index", response_model=IndexResponse)
+    async def index_knowledge_base(
+        files: list[UploadFile] = File(..., description="Knowledge base files to index"),
+        splitter_type: str = Form("recursive"),
+        chunk_size: int = Form(1000),
+        chunk_overlap: int = Form(200),
+        active_service: VectorStoreService = Depends(get_service),
+    ) -> IndexResponse:
+        indexed_files: list[IndexFileResponse] = []
+        total_chunks = 0
+
+        try:
+            with TemporaryDirectory() as tmpdir:
+                temp_root = Path(tmpdir)
+                for upload in files:
+                    try:
+                        filename = Path(upload.filename or "upload.bin").name
+                        source_id = uuid4().hex
+                        temp_path = temp_root / f"{source_id}_{filename}"
+                        content = await upload.read()
+                        temp_path.write_bytes(content)
+
+                        ids = active_service.add_file(
+                            temp_path,
+                            splitter_type=splitter_type,
+                            chunk_size=chunk_size,
+                            chunk_overlap=chunk_overlap,
+                            source_label=filename,
+                            source_id=source_id,
+                        )
+                        indexed_files.append(
+                            IndexFileResponse(
+                                filename=filename,
+                                source_id=source_id,
+                                ids=ids,
+                                count=len(ids),
+                            )
+                        )
+                        total_chunks += len(ids)
+                    finally:
+                        await upload.close()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        return IndexResponse(files=indexed_files, total_files=len(indexed_files), total_chunks=total_chunks)
 
     @app.delete("/documents", response_model=DeleteDocumentResponse)
     def delete_document(

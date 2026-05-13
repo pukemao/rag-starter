@@ -21,6 +21,19 @@ class AddDocumentResponse(BaseModel):
     count: int
 
 
+class IndexFileResponse(BaseModel):
+    filename: str
+    source_id: str
+    ids: list[str]
+    count: int
+
+
+class IndexResponse(BaseModel):
+    files: list[IndexFileResponse]
+    total_files: int
+    total_chunks: int
+
+
 class DeleteDocumentRequest(BaseModel):
     ids: list[str] | None = None
     source: str | None = None

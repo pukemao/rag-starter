@@ -9,7 +9,7 @@
 ```bash
 pip install langchain-community langchain-core
 pip install langchain-text-splitters
-pip install langchain-chroma chromadb fastapi uvicorn
+pip install langchain-chroma chromadb fastapi uvicorn python-multipart
 ```
 
 不同格式会需要额外依赖。建议在需要覆盖办公文档、图片 OCR、EPUB 等格式时安装：
@@ -58,6 +58,16 @@ from src.splitter import load_and_split_documents
 chunks = load_and_split_documents("docs/report.pdf")
 ```
 
+完整索引链路：
+
+```python
+from src.vector_store import VectorStoreService
+
+service = VectorStoreService()
+ids = service.add_file("docs/report.pdf", source_label="report.pdf")
+results = service.search("项目背景", k=3)
+```
+
 写入本地向量库：
 
 ```python
@@ -78,13 +88,23 @@ uvicorn src.api.main:app --reload
 接口：
 
 - `GET /health`: 健康检查
+- `POST /index`: 上传文件，执行提取、分割并写入向量库
 - `POST /documents`: 加载、分割并写入本地向量库
 - `DELETE /documents`: 按 `ids` 或 `source` 删除向量库记录
 - `POST /search`: 相似度检索
 
+`POST /index` 会返回每个文件的 `filename`、`source_id`、`ids` 和 chunk 数量，方便后续追踪和删除。
+
 示例：
 
 ```bash
+curl -X POST http://127.0.0.1:8000/index \
+  -F "files=@docs/report.pdf" \
+  -F "files=@docs/notes.txt" \
+  -F "splitter_type=recursive" \
+  -F "chunk_size=1000" \
+  -F "chunk_overlap=200"
+
 curl -X POST http://127.0.0.1:8000/documents \
   -H "Content-Type: application/json" \
   -d '{"path":"docs/report.pdf","chunk_size":1000,"chunk_overlap":200}'
