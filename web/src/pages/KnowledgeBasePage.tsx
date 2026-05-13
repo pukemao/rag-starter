@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Database, FileText, FileUp, Loader2, RefreshCw, Search, Trash2, X } from "lucide-react";
-import { useMemo, useState, type FormEvent } from "react";
+import { useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
 import { ResultBlock } from "@/components/ResultBlock";
@@ -24,6 +24,8 @@ export function KnowledgeBasePage() {
   const [k, setK] = useState(2);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
+  const [isDraggingFiles, setIsDraggingFiles] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const documentsQuery = useQuery({
     queryKey: documentsQueryKey,
@@ -70,6 +72,40 @@ export function KnowledgeBasePage() {
       chunkSize: 1000,
       chunkOverlap: 200
     });
+  }
+
+  function addFiles(fileList: FileList | File[]) {
+    const nextFiles = Array.from(fileList);
+    if (!nextFiles.length) {
+      return;
+    }
+    setFiles((currentFiles) => {
+      const merged = [...currentFiles];
+      const seen = new Set(currentFiles.map(fileKey));
+      for (const file of nextFiles) {
+        const key = fileKey(file);
+        if (!seen.has(key)) {
+          seen.add(key);
+          merged.push(file);
+        }
+      }
+      return merged;
+    });
+  }
+
+  function onFileInputChange(event: ChangeEvent<HTMLInputElement>) {
+    addFiles(event.currentTarget.files ?? []);
+    event.currentTarget.value = "";
+  }
+
+  function onUploadDrop(event: DragEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    setIsDraggingFiles(false);
+    addFiles(event.dataTransfer.files);
+  }
+
+  function removeSelectedFile(targetFile: File) {
+    setFiles((currentFiles) => currentFiles.filter((file) => fileKey(file) !== fileKey(targetFile)));
   }
 
   function onSearch(event: FormEvent<HTMLFormElement>) {
@@ -183,32 +219,59 @@ export function KnowledgeBasePage() {
       <Dialog
         open={uploadOpen}
         title="上传知识库文件"
-        description="上传后会自动完成文档加载、切分、去重和向量入库。"
+        description="拖拽文件到上传区，或点击上传区选择文件，支持批量上传。"
         onClose={() => setUploadOpen(false)}
       >
         <form className="space-y-5" onSubmit={onUpload}>
-          <label className="block rounded-lg border border-dashed bg-background p-5 text-center">
-            <FileUp className="mx-auto h-8 w-8 text-primary" aria-hidden="true" />
-            <span className="mt-3 block text-sm font-medium">选择文件</span>
-            <span className="mt-1 block text-xs text-muted-foreground">支持多文件上传，重复文件会被拒绝</span>
-            <Input
-              className="mt-4"
-              type="file"
-              multiple
-              onChange={(event) => setFiles(Array.from(event.currentTarget.files ?? []))}
-            />
-          </label>
+          <input ref={fileInputRef} className="sr-only" type="file" multiple onChange={onFileInputChange} />
+          <button
+            type="button"
+            className={cn(
+              "flex min-h-56 w-full flex-col items-center justify-center rounded-lg border border-dashed bg-background p-6 text-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+              isDraggingFiles ? "border-primary bg-primary/5 text-primary" : "border-input hover:border-primary hover:bg-primary/5"
+            )}
+            onClick={() => fileInputRef.current?.click()}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setIsDraggingFiles(true);
+            }}
+            onDragOver={(event) => event.preventDefault()}
+            onDragLeave={(event) => {
+              if (event.currentTarget === event.target) {
+                setIsDraggingFiles(false);
+              }
+            }}
+            onDrop={onUploadDrop}
+          >
+            <span className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <FileUp className="h-6 w-6" aria-hidden="true" />
+            </span>
+            <span className="mt-4 text-base font-semibold">{isDraggingFiles ? "松开后添加文件" : "拖拽文件到这里上传"}</span>
+            <span className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
+              也可以点击此区域选择文件，支持一次选择多个文件。重复文件会在上传前自动合并。
+            </span>
+          </button>
 
           {files.length ? (
             <div className="rounded-md border bg-background p-3">
-              <p className="text-xs font-medium text-muted-foreground">
-                已选择 {files.length} 个文件，共 {Math.max(1, Math.round(totalSize / 1024))} KB
-              </p>
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-xs font-medium text-muted-foreground">
+                  已选择 {files.length} 个文件，共 {Math.max(1, Math.round(totalSize / 1024))} KB
+                </p>
+                <Button variant="ghost" size="sm" type="button" onClick={() => setFiles([])}>
+                  清空
+                </Button>
+              </div>
               <ul className="mt-3 space-y-2">
                 {files.map((file) => (
                   <li key={`${file.name}-${file.size}`} className="flex items-center justify-between gap-3 text-sm">
-                    <span className="min-w-0 break-words">{file.name}</span>
-                    <span className="shrink-0 text-xs text-muted-foreground">{Math.max(1, Math.round(file.size / 1024))} KB</span>
+                    <span className="min-w-0">
+                      <span className="block break-words">{file.name}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{Math.max(1, Math.round(file.size / 1024))} KB</span>
+                    </span>
+                    <Button variant="ghost" size="icon" type="button" aria-label={`移除 ${file.name}`} onClick={() => removeSelectedFile(file)}>
+                      <X className="h-4 w-4" aria-hidden="true" />
+                    </Button>
                   </li>
                 ))}
               </ul>
@@ -274,6 +337,10 @@ export function KnowledgeBasePage() {
       </Dialog>
     </div>
   );
+}
+
+function fileKey(file: File) {
+  return `${file.name}:${file.size}:${file.lastModified}`;
 }
 
 function DocumentTable({
