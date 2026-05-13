@@ -42,8 +42,7 @@ export function KnowledgeBasePage() {
   });
 
   const searchMutation = useMutation({
-    mutationFn: searchKnowledgeBase,
-    onSuccess: () => setSearchOpen(false)
+    mutationFn: searchKnowledgeBase
   });
 
   const deleteMutation = useMutation({
@@ -133,6 +132,7 @@ export function KnowledgeBasePage() {
     if (file) {
       setSelectedSource(file.source_id ?? file.source);
     }
+    searchMutation.reset();
     setSearchOpen(true);
   }
 
@@ -196,26 +196,6 @@ export function KnowledgeBasePage() {
         </PanelContent>
       </Panel>
 
-      {searchMutation.data ? (
-        <Panel>
-          <PanelHeader>
-            <PanelTitle>查询结果</PanelTitle>
-            <PanelDescription>{selectedFile ? `查询范围：${selectedFile.filename}` : "查询范围：全部文件"}</PanelDescription>
-          </PanelHeader>
-          <PanelContent>
-            {results.length ? (
-              <div className="space-y-4">
-                {results.map((result, index) => (
-                  <ResultBlock key={`${result.page_content}-${index}`} result={result} index={index + 1} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState title="没有匹配结果" description="可以切换到全部文件或调整查询问题。" />
-            )}
-          </PanelContent>
-        </Panel>
-      ) : null}
-
       <Dialog
         open={uploadOpen}
         title="上传知识库文件"
@@ -248,7 +228,7 @@ export function KnowledgeBasePage() {
             </span>
             <span className="mt-4 text-base font-semibold">{isDraggingFiles ? "松开后添加文件" : "拖拽文件到这里上传"}</span>
             <span className="mt-2 max-w-sm text-sm leading-6 text-muted-foreground">
-              也可以点击此区域选择文件，支持一次选择多个文件。重复文件会在上传前自动合并。
+              点击此区域同样可以打开文件选择器，支持批量选择。重复文件会在上传前自动合并。
             </span>
           </button>
 
@@ -297,6 +277,7 @@ export function KnowledgeBasePage() {
         title="查询知识库"
         description={selectedFile ? `当前查询范围：${selectedFile.filename}` : "当前查询范围：全部文件"}
         onClose={() => setSearchOpen(false)}
+        size="wide"
       >
         <form className="space-y-5" onSubmit={onSearch}>
           <label className="space-y-2">
@@ -334,6 +315,26 @@ export function KnowledgeBasePage() {
             </Button>
           </div>
         </form>
+
+        {searchMutation.data ? (
+          <div className="mt-6 border-t pt-5">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h3 className="text-sm font-semibold">查询结果</h3>
+                <p className="mt-1 text-sm text-muted-foreground">返回 {results.length} 个匹配段落</p>
+              </div>
+            </div>
+            {results.length ? (
+              <div className="space-y-4">
+                {results.map((result, index) => (
+                  <ResultBlock key={`${result.page_content}-${index}`} result={result} index={index + 1} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState title="没有匹配结果" description="可以切换到全部文件或调整查询问题。" />
+            )}
+          </div>
+        ) : null}
       </Dialog>
     </div>
   );
@@ -387,13 +388,12 @@ function DocumentTable({
 
   return (
     <div className="overflow-x-auto app-scrollbar">
-      <table className="w-full min-w-[860px] border-collapse text-left text-sm">
+      <table className="w-full min-w-[720px] border-collapse text-left text-sm">
         <thead className="border-b bg-muted/60 text-xs text-muted-foreground">
           <tr>
             <th className="px-5 py-3 font-medium">文件</th>
             <th className="px-4 py-3 font-medium">文本块</th>
             <th className="px-4 py-3 font-medium">Source ID</th>
-            <th className="px-4 py-3 font-medium">Hash</th>
             <th className="px-5 py-3 text-right font-medium">操作</th>
           </tr>
         </thead>
@@ -423,9 +423,6 @@ function DocumentTable({
                 </td>
                 <td className="max-w-[200px] px-4 py-4 font-mono text-xs text-muted-foreground">
                   <span className="break-all">{file.source_id ?? "-"}</span>
-                </td>
-                <td className="max-w-[240px] px-4 py-4 font-mono text-xs text-muted-foreground">
-                  <span className="break-all">{file.file_hash ?? "-"}</span>
                 </td>
                 <td className="px-5 py-4">
                   <div className="flex justify-end gap-2">
