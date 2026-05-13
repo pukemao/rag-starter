@@ -64,6 +64,7 @@ class EmbeddingSettings:
     base_url: str = getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
     model: str = getenv("DASHSCOPE_EMBEDDING_MODEL", "text-embedding-v4")
     dimension: int = _get_int("DASHSCOPE_EMBEDDING_DIMENSION", _get_int("RAG_EMBEDDING_DIMENSION", 2048))
+    batch_size: int = _get_int("DASHSCOPE_EMBEDDING_BATCH_SIZE", 10)
     timeout_seconds: float = _get_float("DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS", 60.0)
 
 

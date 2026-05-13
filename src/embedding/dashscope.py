@@ -23,16 +23,20 @@ class DashScopeEmbeddings(Embeddings):
         base_url: str = settings.embedding.base_url,
         model: str = settings.embedding.model,
         dimension: int = settings.embedding.dimension,
+        batch_size: int = settings.embedding.batch_size,
         timeout: float = settings.embedding.timeout_seconds,
         embeddings: Embeddings | None = None,
     ) -> None:
         if dimension <= 0:
             raise ValueError("dimension 必须大于 0")
+        if batch_size <= 0 or batch_size > 10:
+            raise ValueError("DashScope embedding batch_size 必须在 1 到 10 之间")
 
         self.api_key = api_key if api_key is not None else settings.embedding.api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
         self.dimension = dimension
+        self.batch_size = batch_size
         self.timeout = timeout
         self.embeddings = embeddings or self._create_embeddings()
 
@@ -61,6 +65,7 @@ class DashScopeEmbeddings(Embeddings):
             base_url=self.base_url,
             dimensions=self.dimension,
             timeout=self.timeout,
+            chunk_size=self.batch_size,
             tiktoken_enabled=False,
             check_embedding_ctx_length=False,
             model_kwargs=self._model_kwargs(),

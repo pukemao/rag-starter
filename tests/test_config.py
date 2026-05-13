@@ -15,6 +15,7 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.embedding.provider, "dashscope")
         self.assertEqual(settings.embedding.model, "text-embedding-v4")
         self.assertEqual(settings.embedding.dimension, 2048)
+        self.assertEqual(settings.embedding.batch_size, 10)
         self.assertEqual(settings.rag.default_top_k, 4)
         self.assertEqual(settings.llm.provider, "deepseek")
 

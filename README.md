@@ -36,6 +36,7 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-doc
 | `DASHSCOPE_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 百炼 OpenAI 兼容接口地址 |
 | `DASHSCOPE_EMBEDDING_MODEL` | `text-embedding-v4` | 默认 embedding 模型 |
 | `DASHSCOPE_EMBEDDING_DIMENSION` | `2048` | `text-embedding-v4` 输出维度 |
+| `DASHSCOPE_EMBEDDING_BATCH_SIZE` | `10` | 单次 embedding 请求文本数量，百炼要求不超过 10 |
 | `DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS` | `60.0` | embedding 请求超时时间 |
 | `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
 | `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |

@@ -31,8 +31,13 @@ class DashScopeEmbeddingsTests(unittest.TestCase):
 
         self.assertEqual(embeddings.model, "text-embedding-v4")
         self.assertEqual(embeddings.dimension, 2048)
+        self.assertEqual(embeddings.batch_size, 10)
         self.assertEqual(embeddings.embed_query("hello"), [1.0, 2.0])
         self.assertEqual(embeddings.embed_documents(["a", "b"]), [[0.0, 1.0], [1.0, 1.0]])
+
+    def test_rejects_batch_size_larger_than_dashscope_limit(self):
+        with self.assertRaisesRegex(ValueError, "1 到 10"):
+            DashScopeEmbeddings(api_key="sk-test", batch_size=11, embeddings=FakeEmbeddings())
 
 
 if __name__ == "__main__":
