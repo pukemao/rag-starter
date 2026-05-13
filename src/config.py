@@ -6,7 +6,7 @@ arguments, but their default values should be sourced from this file.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from os import getenv
 
 from dotenv import load_dotenv
@@ -34,10 +34,20 @@ def _get_float(name: str, default: float) -> float:
         raise ValueError(f"环境变量 {name} 必须是数字") from exc
 
 
+def _get_list(name: str, default: list[str]) -> list[str]:
+    raw = getenv(name)
+    if raw is None or raw == "":
+        return default
+    return [item.strip() for item in raw.split(",") if item.strip()]
+
+
 @dataclass(frozen=True, slots=True)
 class ApiSettings:
     title: str = getenv("RAG_API_TITLE", "RAG Starter API")
     version: str = getenv("RAG_API_VERSION", "0.1.0")
+    cors_origins: list[str] = field(
+        default_factory=lambda: _get_list("RAG_CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"])
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -72,7 +82,7 @@ class LlmSettings:
     provider: str = getenv("RAG_LLM_PROVIDER", "deepseek")
     api_key: str = getenv("DEEPSEEK_API_KEY", "")
     base_url: str = getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
-    model: str = getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    model: str = getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
     temperature: float = _get_float("DEEPSEEK_TEMPERATURE", 0.2)
     max_tokens: int = _get_int("DEEPSEEK_MAX_TOKENS", 1024)
     timeout_seconds: float = _get_float("DEEPSEEK_TIMEOUT_SECONDS", 60.0)

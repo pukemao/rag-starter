@@ -10,6 +10,7 @@ from src.vector_store import VectorStoreConfig
 class ConfigTests(unittest.TestCase):
     def test_defaults_are_centralized(self):
         self.assertEqual(settings.api.title, "RAG Starter API")
+        self.assertIn("http://localhost:5173", settings.api.cors_origins)
         self.assertEqual(settings.splitter.default_type, DEFAULT_SPLITTER)
         self.assertEqual(settings.rag.default_top_k, 4)
         self.assertEqual(settings.llm.provider, "deepseek")

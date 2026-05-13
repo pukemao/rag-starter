@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
 from src.llm import LLMConfigurationError
@@ -48,6 +49,13 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
     """
 
     app = FastAPI(title=settings.api.title, version=settings.api.version)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=settings.api.cors_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
     vector_service = service or VectorStoreService()
     active_rag_service = rag_service or RagService(vector_service=vector_service)
 

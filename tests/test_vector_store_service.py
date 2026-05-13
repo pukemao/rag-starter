@@ -6,6 +6,7 @@ import unittest
 
 from langchain_core.documents import Document
 
+from src.vector_store.chroma import create_chroma_vector_store
 from src.vector_store import VectorStoreConfig, VectorStoreService
 
 
@@ -152,6 +153,16 @@ class VectorStoreServiceTests(unittest.TestCase):
 
         self.assertEqual(first.added_count, 1)
         self.assertIn("不允许重复上传", str(error.exception))
+
+    def test_chroma_factory_creates_missing_persist_directory(self):
+        with TemporaryDirectory() as tmpdir:
+            persist_directory = Path(tmpdir) / "missing" / "chroma"
+
+            create_chroma_vector_store(
+                config=VectorStoreConfig(persist_directory=str(persist_directory), collection_name="mkdir-test")
+            )
+
+            self.assertTrue(persist_directory.is_dir())
 
 
 if __name__ == "__main__":

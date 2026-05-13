@@ -27,6 +27,7 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-doc
 | --- | --- | --- |
 | `RAG_API_TITLE` | `RAG Starter API` | FastAPI 标题 |
 | `RAG_API_VERSION` | `0.1.0` | FastAPI 版本 |
+| `RAG_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许访问 API 的前端来源，逗号分隔 |
 | `RAG_SPLITTER_TYPE` | `recursive` | 默认分割器 |
 | `RAG_CHUNK_SIZE` | `1000` | 默认 chunk 大小 |
 | `RAG_CHUNK_OVERLAP` | `200` | 默认 chunk 重叠长度 |
@@ -183,6 +184,38 @@ curl -X POST http://127.0.0.1:8000/rag/chat \
 ```
 
 `POST /rag/chat` 响应包含 `answer`、`question`、实际发送给 LLM 的 `prompt`、`references`、`model` 和 `usage`。如果没有配置 `DEEPSEEK_API_KEY`，接口会返回 `500` 并提示设置环境变量。
+
+## 前端 Web
+
+前端位于 [web](web)，技术栈为 Vite、React、TypeScript、Tailwind CSS、shadcn/ui 风格组件、TanStack Query 和 React Router。
+
+启动后端：
+
+```bash
+uvicorn src.api.main:app --reload
+```
+
+启动前端：
+
+```bash
+cd web
+npm install
+npm run dev
+```
+
+默认前端地址为 `http://127.0.0.1:5173`。默认 API 地址为 `http://127.0.0.1:8000`，可通过 `web/.env.local` 覆盖：
+
+```bash
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+当前页面包含：
+
+- 状态：检查 FastAPI `/health`
+- 索引：上传文件并调用 `POST /index`
+- 检索：调用 `POST /search`
+- RAG 对话：调用 `POST /rag/chat`
+- 删除：调用 `DELETE /documents`
 
 ## 支持格式
 

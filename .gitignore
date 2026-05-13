@@ -10,3 +10,11 @@ storage/
 .env
 .env.*
 !.env.example
+web/node_modules/
+web/dist/
+.playwright-cli/
+web/*.tsbuildinfo
+web/vite.config.js
+web/vite.config.d.ts
+web/tailwind.config.js
+web/tailwind.config.d.ts

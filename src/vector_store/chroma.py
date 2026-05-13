@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from importlib import import_module
+from pathlib import Path
 from typing import Any
 
 from langchain_core.embeddings import Embeddings
@@ -21,6 +22,8 @@ def create_chroma_vector_store(
     """Create a persistent local Chroma vector store."""
 
     active_config = config or VectorStoreConfig()
+    persist_directory = Path(active_config.persist_directory)
+    persist_directory.mkdir(parents=True, exist_ok=True)
     active_embedding = embedding or HashEmbeddings(dimension=active_config.embedding_dimension)
 
     try:
@@ -37,6 +40,6 @@ def create_chroma_vector_store(
     return chroma_cls(
         collection_name=active_config.collection_name,
         embedding_function=active_embedding,
-        persist_directory=active_config.persist_directory,
+        persist_directory=str(persist_directory),
         **kwargs,
     )
