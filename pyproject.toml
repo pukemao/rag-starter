@@ -4,9 +4,13 @@ version = "0.1.0"
 description = "LangChain-based document loader helpers for RAG projects."
 requires-python = ">=3.11"
 dependencies = [
+    "chromadb",
+    "fastapi",
     "langchain-community",
+    "langchain-chroma",
     "langchain-core",
     "langchain-text-splitters",
+    "uvicorn",
 ]
 
 [project.optional-dependencies]
