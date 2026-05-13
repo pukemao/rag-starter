@@ -46,7 +46,7 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
         active_service: VectorStoreService = Depends(get_service),
     ) -> AddDocumentResponse:
         try:
-            ids = active_service.add_file(
+            result = active_service.index_file(
                 request.path,
                 loader_kwargs=request.loader_kwargs,
                 splitter_type=request.splitter_type,
@@ -56,7 +56,12 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
             )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return AddDocumentResponse(ids=ids, count=len(ids))
+        return AddDocumentResponse(
+            ids=result.ids,
+            count=result.added_count,
+            input_count=result.input_count,
+            skipped_duplicates=result.skipped_duplicates,
+        )
 
     @app.post("/index", response_model=IndexResponse)
     async def index_knowledge_base(
@@ -68,6 +73,8 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
     ) -> IndexResponse:
         indexed_files: list[IndexFileResponse] = []
         total_chunks = 0
+        total_input_chunks = 0
+        total_skipped_duplicates = 0
 
         try:
             with TemporaryDirectory() as tmpdir:
@@ -80,7 +87,7 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
                         content = await upload.read()
                         temp_path.write_bytes(content)
 
-                        ids = active_service.add_file(
+                        result = active_service.index_file(
                             temp_path,
                             splitter_type=splitter_type,
                             chunk_size=chunk_size,
@@ -92,17 +99,27 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
                             IndexFileResponse(
                                 filename=filename,
                                 source_id=source_id,
-                                ids=ids,
-                                count=len(ids),
+                                ids=result.ids,
+                                count=result.added_count,
+                                input_count=result.input_count,
+                                skipped_duplicates=result.skipped_duplicates,
                             )
                         )
-                        total_chunks += len(ids)
+                        total_chunks += result.added_count
+                        total_input_chunks += result.input_count
+                        total_skipped_duplicates += result.skipped_duplicates
                     finally:
                         await upload.close()
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-        return IndexResponse(files=indexed_files, total_files=len(indexed_files), total_chunks=total_chunks)
+        return IndexResponse(
+            files=indexed_files,
+            total_files=len(indexed_files),
+            total_chunks=total_chunks,
+            total_input_chunks=total_input_chunks,
+            total_skipped_duplicates=total_skipped_duplicates,
+        )
 
     @app.delete("/documents", response_model=DeleteDocumentResponse)
     def delete_document(

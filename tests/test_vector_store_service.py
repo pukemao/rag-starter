@@ -6,7 +6,7 @@ import unittest
 
 from langchain_core.documents import Document
 
-from src.vector_store import SearchResult, VectorStoreConfig, VectorStoreService
+from src.vector_store import VectorStoreConfig, VectorStoreService
 
 
 class FakeCollection:
@@ -46,6 +46,24 @@ class VectorStoreServiceTests(unittest.TestCase):
         self.assertEqual(ids, store.ids)
         self.assertEqual(len(ids), 1)
         self.assertTrue(ids[0].startswith("doc-"))
+        self.assertIn("chunk_hash", store.documents[0].metadata)
+        self.assertEqual(store.documents[0].metadata["chunk_index"], 0)
+
+    def test_index_documents_deduplicates_within_one_batch_only(self):
+        store = FakeVectorStore()
+        service = VectorStoreService(vector_store=store)
+        documents = [
+            Document(page_content="hello   world", metadata={"source_id": "file-a"}),
+            Document(page_content="hello world", metadata={"source_id": "file-a"}),
+            Document(page_content="hello world", metadata={"source_id": "file-b"}),
+        ]
+
+        result = service.index_documents(documents)
+
+        self.assertEqual(result.added_count, 2)
+        self.assertEqual(result.skipped_duplicates, 1)
+        self.assertEqual(len(store.documents), 2)
+        self.assertNotEqual(store.ids[0], store.ids[1])
 
     def test_delete_by_ids(self):
         store = FakeVectorStore()
@@ -72,7 +90,10 @@ class VectorStoreServiceTests(unittest.TestCase):
 
         results = service.search("hello", k=1)
 
-        self.assertEqual(results, [SearchResult(page_content="hello", metadata={"source": "a.txt"}, score=0.12)])
+        self.assertEqual(results[0].page_content, "hello")
+        self.assertEqual(results[0].metadata["source"], "a.txt")
+        self.assertIn("chunk_hash", results[0].metadata)
+        self.assertEqual(results[0].score, 0.12)
 
     def test_add_file_runs_full_indexing_pipeline(self):
         with TemporaryDirectory() as tmpdir:

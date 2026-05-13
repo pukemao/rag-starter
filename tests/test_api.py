@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from src.vector_store import SearchResult
+from src.vector_store import IndexResult, SearchResult
 
 
 class FakeService:
@@ -14,6 +14,10 @@ class FakeService:
     def add_file(self, path, **kwargs):
         self.add_requests.append((path, kwargs))
         return ["id-1", "id-2"]
+
+    def index_file(self, path, **kwargs):
+        self.add_requests.append((path, kwargs))
+        return IndexResult(ids=["id-1", "id-2"], input_count=3, added_count=2, skipped_duplicates=1)
 
     def delete(self, *, ids=None, source=None):
         self.delete_requests.append({"ids": ids, "source": source})
@@ -49,7 +53,10 @@ class ApiTests(unittest.TestCase):
         )
 
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json(), {"ids": ["id-1", "id-2"], "count": 2})
+        self.assertEqual(
+            response.json(),
+            {"ids": ["id-1", "id-2"], "count": 2, "input_count": 3, "skipped_duplicates": 1},
+        )
         self.assertEqual(self.service.add_requests[0][0], "data/a.md")
         self.assertEqual(self.service.add_requests[0][1]["chunk_size"], 500)
 
@@ -67,7 +74,11 @@ class ApiTests(unittest.TestCase):
         payload = response.json()
         self.assertEqual(payload["total_files"], 2)
         self.assertEqual(payload["total_chunks"], 4)
+        self.assertEqual(payload["total_input_chunks"], 6)
+        self.assertEqual(payload["total_skipped_duplicates"], 2)
         self.assertEqual([item["filename"] for item in payload["files"]], ["note.md", "notes.txt"])
+        self.assertEqual(payload["files"][0]["input_count"], 3)
+        self.assertEqual(payload["files"][0]["skipped_duplicates"], 1)
         self.assertEqual(len(self.service.add_requests), 2)
         first_call = self.service.add_requests[0][1]
         self.assertEqual(first_call["splitter_type"], "recursive")

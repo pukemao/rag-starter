@@ -26,3 +26,13 @@ class SearchResult:
     page_content: str
     metadata: dict[str, Any] = field(default_factory=dict)
     score: float | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class IndexResult:
+    """Result returned after indexing chunks into the vector database."""
+
+    ids: list[str]
+    input_count: int
+    added_count: int
+    skipped_duplicates: int

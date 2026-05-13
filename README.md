@@ -64,9 +64,12 @@ chunks = load_and_split_documents("docs/report.pdf")
 from src.vector_store import VectorStoreService
 
 service = VectorStoreService()
-ids = service.add_file("docs/report.pdf", source_label="report.pdf")
+result = service.index_file("docs/report.pdf", source_label="report.pdf")
+print(result.ids, result.skipped_duplicates)
 results = service.search("项目背景", k=3)
 ```
+
+索引入库前会执行文件内 chunk 去重：同一个文件切出的重复 chunk 只写入一次；不同文件里的相同 chunk 会分别保留，方便后续删除某个上传文件时只删除该文件对应的数据。
 
 写入本地向量库：
 
@@ -93,7 +96,7 @@ uvicorn src.api.main:app --reload
 - `DELETE /documents`: 按 `ids` 或 `source` 删除向量库记录
 - `POST /search`: 相似度检索
 
-`POST /index` 会返回每个文件的 `filename`、`source_id`、`ids` 和 chunk 数量，方便后续追踪和删除。
+`POST /index` 会返回每个文件的 `filename`、`source_id`、`ids`、写入 chunk 数量、输入 chunk 数量和跳过的重复 chunk 数量，方便后续追踪、删除和观察去重效果。
 
 示例：
 

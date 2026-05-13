@@ -19,6 +19,8 @@ class AddDocumentRequest(BaseModel):
 class AddDocumentResponse(BaseModel):
     ids: list[str]
     count: int
+    input_count: int | None = None
+    skipped_duplicates: int = 0
 
 
 class IndexFileResponse(BaseModel):
@@ -26,12 +28,16 @@ class IndexFileResponse(BaseModel):
     source_id: str
     ids: list[str]
     count: int
+    input_count: int
+    skipped_duplicates: int
 
 
 class IndexResponse(BaseModel):
     files: list[IndexFileResponse]
     total_files: int
     total_chunks: int
+    total_input_chunks: int
+    total_skipped_duplicates: int
 
 
 class DeleteDocumentRequest(BaseModel):

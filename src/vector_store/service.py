@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
+import re
 from typing import Any
 
 from langchain_core.documents import Document
@@ -11,8 +12,10 @@ from langchain_core.embeddings import Embeddings
 
 from src.splitter import load_and_split_documents
 
-from .base import SearchResult, VectorStoreConfig
+from .base import IndexResult, SearchResult, VectorStoreConfig
 from .chroma import create_chroma_vector_store
+
+_WHITESPACE_PATTERN = re.compile(r"\s+")
 
 
 class VectorStoreService:
@@ -31,12 +34,45 @@ class VectorStoreService:
     def add_documents(self, documents: list[Document], *, ids: list[str] | None = None) -> list[str]:
         """Add pre-loaded and pre-split documents to the vector database."""
 
-        if not documents:
-            return []
+        return self.index_documents(documents, ids=ids).ids
 
-        document_ids = ids or [self._document_id(document, index) for index, document in enumerate(documents)]
-        self.vector_store.add_documents(documents, ids=document_ids)
-        return document_ids
+    def index_documents(self, documents: list[Document], *, ids: list[str] | None = None) -> IndexResult:
+        """Deduplicate one batch of chunks and add unique chunks to the vector database."""
+
+        if not documents:
+            return IndexResult(ids=[], input_count=0, added_count=0, skipped_duplicates=0)
+
+        if ids is not None and len(ids) != len(documents):
+            raise ValueError("ids 数量必须与 documents 数量一致")
+
+        unique_documents: list[Document] = []
+        unique_ids: list[str] = []
+        seen_hashes_by_source: dict[str, set[str]] = {}
+
+        for index, document in enumerate(documents):
+            source_key = self._source_key(document)
+            chunk_hash = self._chunk_hash(document.page_content)
+            seen_hashes = seen_hashes_by_source.setdefault(source_key, set())
+            if chunk_hash in seen_hashes:
+                continue
+            seen_hashes.add(chunk_hash)
+
+            metadata = dict(document.metadata)
+            metadata.setdefault("chunk_hash", chunk_hash)
+            metadata.setdefault("chunk_index", len(unique_documents))
+            unique_document = Document(page_content=document.page_content, metadata=metadata)
+            unique_documents.append(unique_document)
+            unique_ids.append(ids[index] if ids is not None else self._document_id(unique_document))
+
+        if unique_documents:
+            self.vector_store.add_documents(unique_documents, ids=unique_ids)
+
+        return IndexResult(
+            ids=unique_ids,
+            input_count=len(documents),
+            added_count=len(unique_documents),
+            skipped_duplicates=len(documents) - len(unique_documents),
+        )
 
     def add_file(
         self,
@@ -51,6 +87,31 @@ class VectorStoreService:
         source_id: str | None = None,
     ) -> list[str]:
         """Load, split, and add one local file."""
+
+        return self.index_file(
+            file_path,
+            loader_kwargs=loader_kwargs,
+            splitter_type=splitter_type,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            splitter_kwargs=splitter_kwargs,
+            source_label=source_label,
+            source_id=source_id,
+        ).ids
+
+    def index_file(
+        self,
+        file_path: str | Path,
+        *,
+        loader_kwargs: dict[str, Any] | None = None,
+        splitter_type: str = "recursive",
+        chunk_size: int = 1000,
+        chunk_overlap: int = 200,
+        splitter_kwargs: dict[str, Any] | None = None,
+        source_label: str | None = None,
+        source_id: str | None = None,
+    ) -> IndexResult:
+        """Load, split, deduplicate within one file, and add it to the vector database."""
 
         chunks = load_and_split_documents(
             file_path,
@@ -72,7 +133,7 @@ class VectorStoreService:
                 )
                 for chunk in chunks
             ]
-        return self.add_documents(chunks)
+        return self.index_documents(chunks)
 
     def delete(self, *, ids: list[str] | None = None, source: str | None = None) -> int | None:
         """Delete documents by ids or by ``metadata.source``."""
@@ -115,11 +176,16 @@ class VectorStoreService:
         return [SearchResult(page_content=document.page_content, metadata=dict(document.metadata)) for document in documents]
 
     @staticmethod
-    def _document_id(document: Document, index: int) -> str:
-        source = str(document.metadata.get("source_id") or document.metadata.get("source", "unknown"))
-        payload = f"{source}:{index}:{document.page_content}".encode("utf-8")
+    def _document_id(document: Document) -> str:
+        source = VectorStoreService._source_key(document)
+        chunk_hash = str(document.metadata.get("chunk_hash") or VectorStoreService._chunk_hash(document.page_content))
+        payload = f"{source}:{chunk_hash}".encode("utf-8")
         digest = hashlib.sha256(payload).hexdigest()
         return f"doc-{digest[:32]}"
+
+    @staticmethod
+    def _source_key(document: Document) -> str:
+        return str(document.metadata.get("source_id") or document.metadata.get("source", "unknown"))
 
     @staticmethod
     def _rewrite_metadata(
@@ -134,3 +200,8 @@ class VectorStoreService:
         if source_id is not None:
             updated["source_id"] = source_id
         return updated
+
+    @staticmethod
+    def _chunk_hash(page_content: str) -> str:
+        normalized = _WHITESPACE_PATTERN.sub(" ", page_content).strip()
+        return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
