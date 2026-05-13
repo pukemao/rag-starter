@@ -53,6 +53,8 @@ class RagServiceTests(unittest.TestCase):
         self.assertIn("原始问题是什么？", result.prompt)
         self.assertIn("第一段知识库内容", result.prompt)
         self.assertIn("[1] source=a.md，score=0.12", result.prompt)
+        self.assertIn("将参考段落与用户问题整合成正常回答", result.prompt)
+        self.assertNotIn("参考段落编号", result.prompt)
         self.assertEqual(vector_service.search_requests[0], {"query": "原始问题是什么？", "k": 2, "filter": {"source": "a.md"}})
         self.assertEqual(llm_client.chat_requests[0]["system_prompt"], "系统提示词")
         self.assertEqual(llm_client.chat_requests[0]["temperature"], 0.1)

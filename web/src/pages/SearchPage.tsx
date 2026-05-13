@@ -14,7 +14,7 @@ import { searchKnowledgeBase } from "@/lib/api";
 
 export function SearchPage() {
   const [query, setQuery] = useState("");
-  const [k, setK] = useState(4);
+  const [k, setK] = useState(2);
   const [filter, setFilter] = useState("");
   const [formError, setFormError] = useState("");
 

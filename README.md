@@ -40,7 +40,7 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-doc
 | `DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS` | `60.0` | embedding 请求超时时间 |
 | `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
 | `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
-| `RAG_TOP_K` | `4` | RAG 对话默认检索段落数 |
+| `RAG_TOP_K` | `2` | RAG 对话默认检索段落数 |
 | `RAG_SYSTEM_PROMPT` | 知识库问答助手提示词 | RAG 对话默认 system prompt |
 | `RAG_LLM_PROVIDER` | `deepseek` | 默认 LLM 提供方 |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API Key，调用 `/rag/chat` 时必填 |
@@ -125,7 +125,7 @@ print(result.answer)
 print(result.references)
 ```
 
-流程为：用户问题 -> LangChain embedding -> LangChain Chroma 相似度检索 -> 返回 top-k 知识库段落 -> 拼接最终 prompt -> LangChain ChatOpenAI 兼容方式调用 DeepSeek LLM -> 返回回答、prompt 和引用段落。
+流程为：用户问题 -> LangChain embedding -> LangChain Chroma 相似度检索 -> 返回 top-k 知识库段落 -> 将用户问题和参考段落整合为最终 prompt -> LangChain ChatOpenAI 兼容方式调用 DeepSeek LLM -> 返回自然回答、prompt 和引用段落。
 
 索引入库前会执行文件内 chunk 去重：同一个文件切出的重复 chunk 只写入一次；不同文件里的相同 chunk 会分别保留，方便后续删除某个上传文件时只删除该文件对应的数据。
 

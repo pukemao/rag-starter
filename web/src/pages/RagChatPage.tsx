@@ -15,7 +15,7 @@ import { parseOptionalJson } from "@/lib/form";
 
 export function RagChatPage() {
   const [question, setQuestion] = useState("");
-  const [k, setK] = useState(4);
+  const [k, setK] = useState(2);
   const [temperature, setTemperature] = useState(0.2);
   const [maxTokens, setMaxTokens] = useState(1024);
   const [filter, setFilter] = useState("");

@@ -76,7 +76,7 @@ class VectorStoreSettings:
 
 @dataclass(frozen=True, slots=True)
 class RagSettings:
-    default_top_k: int = _get_int("RAG_TOP_K", 4)
+    default_top_k: int = _get_int("RAG_TOP_K", 2)
     system_prompt: str = getenv(
         "RAG_SYSTEM_PROMPT",
         "你是一个严谨的知识库问答助手。请优先依据参考段落回答；如果参考段落不足以回答，请明确说明无法从知识库中确认。",
