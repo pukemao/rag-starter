@@ -27,7 +27,7 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd pytho
 | --- | --- | --- |
 | `RAG_API_TITLE` | `RAG Starter API` | FastAPI 标题 |
 | `RAG_API_VERSION` | `0.1.0` | FastAPI 版本 |
-| `RAG_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | 允许访问 API 的前端来源，逗号分隔 |
+| `RAG_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174` | 允许访问 API 的前端来源，逗号分隔 |
 | `RAG_SPLITTER_TYPE` | `recursive` | 默认分割器 |
 | `RAG_CHUNK_SIZE` | `1000` | 默认 chunk 大小 |
 | `RAG_CHUNK_OVERLAP` | `200` | 默认 chunk 重叠长度 |
@@ -153,9 +153,10 @@ uvicorn src.api.main:app --reload
 接口：
 
 - `GET /health`: 健康检查
+- `GET /documents`: 按文件维度列出已入库知识库文件和 chunk 数量
 - `POST /index`: 上传文件，执行提取、分割并写入向量库
 - `POST /documents`: 加载、分割并写入本地向量库
-- `DELETE /documents`: 按 `ids` 或 `source` 删除向量库记录
+- `DELETE /documents`: 按 `ids`、`source_id` 或 `source` 删除向量库记录
 - `POST /search`: 相似度检索
 - `POST /rag/chat`: RAG 增强对话，基于本地知识库检索结果调用 DeepSeek
 
@@ -180,6 +181,8 @@ curl -X POST http://127.0.0.1:8000/index \
   -F "splitter_type=recursive" \
   -F "chunk_size=1000" \
   -F "chunk_overlap=200"
+
+curl http://127.0.0.1:8000/documents
 
 curl -X POST http://127.0.0.1:8000/documents \
   -H "Content-Type: application/json" \
@@ -224,6 +227,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 
 当前页面包含：
 
+- 知识库：用户端知识库管理页，支持上传文件、文件列表展示、按文件查询、删除文件数据；按文件操作优先使用 `source_id`
 - 状态：检查 FastAPI `/health`
 - 索引：上传文件并调用 `POST /index`
 - 检索：调用 `POST /search`

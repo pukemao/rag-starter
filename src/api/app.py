@@ -21,6 +21,8 @@ from .schemas import (
     DeleteDocumentResponse,
     IndexFileResponse,
     IndexResponse,
+    KnowledgeFileResponse,
+    ListDocumentsResponse,
     RagChatRequest,
     RagChatResponse,
     RagReferenceResponse,
@@ -93,6 +95,30 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
             count=result.added_count,
             input_count=result.input_count,
             skipped_duplicates=result.skipped_duplicates,
+        )
+
+    @app.get("/documents", response_model=ListDocumentsResponse)
+    def list_documents(
+        active_service: VectorStoreService = Depends(get_service),
+    ) -> ListDocumentsResponse:
+        try:
+            files = active_service.list_files()
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ListDocumentsResponse(
+            files=[
+                KnowledgeFileResponse(
+                    filename=file.filename,
+                    source=file.source,
+                    source_id=file.source_id,
+                    file_hash=file.file_hash,
+                    chunk_count=file.chunk_count,
+                    chunk_ids=file.chunk_ids,
+                )
+                for file in files
+            ],
+            total_files=len(files),
+            total_chunks=sum(file.chunk_count for file in files),
         )
 
     @app.post("/index", response_model=IndexResponse)
@@ -176,7 +202,7 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
         active_service: VectorStoreService = Depends(get_service),
     ) -> DeleteDocumentResponse:
         try:
-            deleted = active_service.delete(ids=request.ids, source=request.source)
+            deleted = active_service.delete(ids=request.ids, source=request.source, source_id=request.source_id)
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return DeleteDocumentResponse(deleted=deleted)

@@ -48,3 +48,15 @@ class IndexResult:
     input_count: int
     added_count: int
     skipped_duplicates: int
+
+
+@dataclass(frozen=True, slots=True)
+class KnowledgeFile:
+    """Indexed file summary built from vector store metadata."""
+
+    filename: str
+    source: str
+    source_id: str | None
+    file_hash: str | None
+    chunk_count: int
+    chunk_ids: list[str] = field(default_factory=list)

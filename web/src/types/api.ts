@@ -46,6 +46,21 @@ export type DeleteDocumentResponse = {
   deleted?: number | null;
 };
 
+export type KnowledgeFile = {
+  filename: string;
+  source: string;
+  source_id?: string | null;
+  file_hash?: string | null;
+  chunk_count: number;
+  chunk_ids: string[];
+};
+
+export type ListDocumentsResponse = {
+  files: KnowledgeFile[];
+  total_files: number;
+  total_chunks: number;
+};
+
 export type ApiErrorPayload = {
   detail?: string | { message?: string; filename?: string; file_hash?: string };
 };

@@ -13,7 +13,7 @@ from langchain_core.embeddings import Embeddings
 from src.config import settings
 from src.splitter import load_and_split_documents
 
-from .base import DuplicateFileError, IndexResult, SearchResult, VectorStoreConfig
+from .base import DuplicateFileError, IndexResult, KnowledgeFile, SearchResult, VectorStoreConfig
 from .chroma import create_chroma_vector_store
 
 _WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -178,21 +178,67 @@ class VectorStoreService:
 
         return hashlib.sha256(content).hexdigest()
 
-    def delete(self, *, ids: list[str] | None = None, source: str | None = None) -> int | None:
-        """Delete documents by ids or by ``metadata.source``."""
+    def delete(
+        self,
+        *,
+        ids: list[str] | None = None,
+        source: str | None = None,
+        source_id: str | None = None,
+    ) -> int | None:
+        """Delete documents by ids, ``metadata.source_id``, or ``metadata.source``."""
 
         if ids:
             self.vector_store.delete(ids=ids)
             return len(ids)
 
-        if source:
+        if source_id or source:
             collection = getattr(self.vector_store, "_collection", None)
             if collection is None or not hasattr(collection, "delete"):
-                raise NotImplementedError("当前 vector store 不支持按 source 删除")
-            collection.delete(where={"source": source})
+                raise NotImplementedError("当前 vector store 不支持按 metadata 删除")
+            collection.delete(where={"source_id": source_id} if source_id else {"source": source})
             return None
 
-        raise ValueError("删除文档时必须提供 ids 或 source")
+        raise ValueError("删除文档时必须提供 ids、source_id 或 source")
+
+    def list_files(self) -> list[KnowledgeFile]:
+        """List indexed files by aggregating vector store metadata."""
+
+        raw = self._get_all_documents()
+        ids = raw.get("ids") or []
+        metadatas = raw.get("metadatas") or []
+        grouped: dict[str, dict[str, Any]] = {}
+
+        for doc_id, metadata in zip(ids, metadatas, strict=False):
+            if not isinstance(metadata, dict):
+                metadata = {}
+            source = str(metadata.get("source") or metadata.get("filename") or "unknown")
+            source_id = metadata.get("source_id")
+            file_hash = metadata.get("file_hash")
+            key = str(source_id or file_hash or source)
+            item = grouped.setdefault(
+                key,
+                {
+                    "filename": str(metadata.get("filename") or source),
+                    "source": source,
+                    "source_id": str(source_id) if source_id else None,
+                    "file_hash": str(file_hash) if file_hash else None,
+                    "chunk_ids": [],
+                },
+            )
+            item["chunk_ids"].append(str(doc_id))
+
+        files = [
+            KnowledgeFile(
+                filename=item["filename"],
+                source=item["source"],
+                source_id=item["source_id"],
+                file_hash=item["file_hash"],
+                chunk_count=len(item["chunk_ids"]),
+                chunk_ids=item["chunk_ids"],
+            )
+            for item in grouped.values()
+        ]
+        return sorted(files, key=lambda file: file.filename.lower())
 
     def search(
         self,
@@ -217,6 +263,19 @@ class VectorStoreService:
 
         documents = self.vector_store.similarity_search(query, k=k, filter=filter)
         return [SearchResult(page_content=document.page_content, metadata=dict(document.metadata)) for document in documents]
+
+    def _get_all_documents(self) -> dict[str, Any]:
+        stores = [self.vector_store, getattr(self.vector_store, "_collection", None)]
+        for store in stores:
+            if store is None or not hasattr(store, "get"):
+                continue
+            try:
+                result = store.get(include=["metadatas"])
+            except TypeError:
+                result = store.get()
+            if isinstance(result, dict):
+                return result
+        raise NotImplementedError("当前 vector store 不支持列出文档")
 
     @staticmethod
     def _document_id(document: Document) -> str:

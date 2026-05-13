@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from src.vector_store import KnowledgeFile
 from src.rag import RagAnswer, RagReference
 from src.vector_store import IndexResult, SearchResult
 
@@ -30,9 +31,21 @@ class FakeService:
 
         return sha256(content).hexdigest()
 
-    def delete(self, *, ids=None, source=None):
-        self.delete_requests.append({"ids": ids, "source": source})
+    def delete(self, *, ids=None, source=None, source_id=None):
+        self.delete_requests.append({"ids": ids, "source": source, "source_id": source_id})
         return len(ids or [])
+
+    def list_files(self):
+        return [
+            KnowledgeFile(
+                filename="a.txt",
+                source="a.txt",
+                source_id="source-a",
+                file_hash="hash-a",
+                chunk_count=2,
+                chunk_ids=["id-1", "id-2"],
+            )
+        ]
 
     def search(self, query, *, k=4, filter=None):
         self.search_requests.append({"query": query, "k": k, "filter": filter})
@@ -97,6 +110,28 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(self.service.add_requests[0][0], "data/a.md")
         self.assertEqual(self.service.add_requests[0][1]["chunk_size"], 500)
 
+    def test_list_documents(self):
+        response = self.client.get("/documents")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "files": [
+                    {
+                        "filename": "a.txt",
+                        "source": "a.txt",
+                        "source_id": "source-a",
+                        "file_hash": "hash-a",
+                        "chunk_count": 2,
+                        "chunk_ids": ["id-1", "id-2"],
+                    }
+                ],
+                "total_files": 1,
+                "total_chunks": 2,
+            },
+        )
+
     def test_index_upload(self):
         response = self.client.post(
             "/index",
@@ -154,10 +189,11 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(len(self.service.add_requests), 0)
 
     def test_delete_document(self):
-        response = self.client.request("DELETE", "/documents", json={"ids": ["id-1"]})
+        response = self.client.request("DELETE", "/documents", json={"ids": ["id-1"], "source_id": "source-a"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json(), {"deleted": 1})
+        self.assertEqual(self.service.delete_requests[0], {"ids": ["id-1"], "source": None, "source_id": "source-a"})
 
     def test_search(self):
         response = self.client.post("/search", json={"query": "hello", "k": 1})

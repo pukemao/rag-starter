@@ -46,7 +46,10 @@ class ApiSettings:
     title: str = getenv("RAG_API_TITLE", "RAG Starter API")
     version: str = getenv("RAG_API_VERSION", "0.1.0")
     cors_origins: list[str] = field(
-        default_factory=lambda: _get_list("RAG_CORS_ORIGINS", ["http://localhost:5173", "http://127.0.0.1:5173"])
+        default_factory=lambda: _get_list(
+            "RAG_CORS_ORIGINS",
+            ["http://localhost:5173", "http://127.0.0.1:5173", "http://localhost:5174", "http://127.0.0.1:5174"],
+        )
     )
 
 

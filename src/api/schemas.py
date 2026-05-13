@@ -45,10 +45,26 @@ class IndexResponse(BaseModel):
 class DeleteDocumentRequest(BaseModel):
     ids: list[str] | None = None
     source: str | None = None
+    source_id: str | None = None
 
 
 class DeleteDocumentResponse(BaseModel):
     deleted: int | None = None
+
+
+class KnowledgeFileResponse(BaseModel):
+    filename: str
+    source: str
+    source_id: str | None = None
+    file_hash: str | None = None
+    chunk_count: int
+    chunk_ids: list[str] = Field(default_factory=list)
+
+
+class ListDocumentsResponse(BaseModel):
+    files: list[KnowledgeFileResponse]
+    total_files: int
+    total_chunks: int
 
 
 class SearchRequest(BaseModel):

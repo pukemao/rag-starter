@@ -30,14 +30,16 @@ class FakeVectorStore:
         self.documents.extend(documents)
         self.ids.extend(ids)
 
-    def get(self, *, where, limit=None):
+    def get(self, *, where=None, limit=None, include=None):
         ids = []
+        metadatas = []
         for doc_id, document in zip(self.ids, self.documents):
-            if all(document.metadata.get(key) == value for key, value in where.items()):
+            if where is None or all(document.metadata.get(key) == value for key, value in where.items()):
                 ids.append(doc_id)
+                metadatas.append(document.metadata)
                 if limit is not None and len(ids) >= limit:
                     break
-        return {"ids": ids}
+        return {"ids": ids, "metadatas": metadatas}
 
     def delete(self, *, ids):
         self.deleted_ids.extend(ids)
@@ -111,6 +113,15 @@ class VectorStoreServiceTests(unittest.TestCase):
         self.assertIsNone(deleted)
         self.assertEqual(store._collection.deleted_where, {"source": "a.txt"})
 
+    def test_delete_by_source_id(self):
+        store = FakeVectorStore()
+        service = VectorStoreService(vector_store=store)
+
+        deleted = service.delete(source_id="source-a")
+
+        self.assertIsNone(deleted)
+        self.assertEqual(store._collection.deleted_where, {"source_id": "source-a"})
+
     def test_search_returns_serializable_results(self):
         store = FakeVectorStore()
         service = VectorStoreService(vector_store=store)
@@ -122,6 +133,26 @@ class VectorStoreServiceTests(unittest.TestCase):
         self.assertEqual(results[0].metadata["source"], "a.txt")
         self.assertIn("chunk_hash", results[0].metadata)
         self.assertEqual(results[0].score, 0.12)
+
+    def test_list_files_groups_documents_by_source_id(self):
+        store = FakeVectorStore()
+        service = VectorStoreService(vector_store=store)
+        service.add_documents(
+            [
+                Document(page_content="chunk 1", metadata={"source": "a.md", "source_id": "source-a", "file_hash": "hash-a"}),
+                Document(page_content="chunk 2", metadata={"source": "a.md", "source_id": "source-a", "file_hash": "hash-a"}),
+                Document(page_content="chunk 3", metadata={"source": "b.md", "source_id": "source-b", "file_hash": "hash-b"}),
+            ]
+        )
+
+        files = service.list_files()
+
+        self.assertEqual([file.filename for file in files], ["a.md", "b.md"])
+        self.assertEqual(files[0].source, "a.md")
+        self.assertEqual(files[0].source_id, "source-a")
+        self.assertEqual(files[0].file_hash, "hash-a")
+        self.assertEqual(files[0].chunk_count, 2)
+        self.assertEqual(len(files[0].chunk_ids), 2)
 
     def test_add_file_runs_full_indexing_pipeline(self):
         with TemporaryDirectory() as tmpdir:

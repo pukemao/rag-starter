@@ -7,7 +7,16 @@ import { App } from "@/App";
 
 vi.stubGlobal(
   "fetch",
-  vi.fn(async () => new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } }))
+  vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.endsWith("/documents")) {
+      return new Response(JSON.stringify({ files: [], total_files: 0, total_chunks: 0 }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" }
+      });
+    }
+    return new Response(JSON.stringify({ status: "ok" }), { status: 200, headers: { "Content-Type": "application/json" } });
+  })
 );
 
 function renderApp(initialEntry = "/") {
@@ -27,9 +36,9 @@ function renderApp(initialEntry = "/") {
 }
 
 describe("App", () => {
-  it("renders dashboard", () => {
+  it("renders knowledge base page by default", async () => {
     renderApp();
-    expect(screen.getByRole("heading", { name: "知识库工作台" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "知识库" })).toBeInTheDocument();
   });
 
   it("renders rag chat route", () => {

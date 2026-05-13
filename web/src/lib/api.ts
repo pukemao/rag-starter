@@ -3,6 +3,7 @@ import type {
   DeleteDocumentResponse,
   HealthResponse,
   IndexResponse,
+  ListDocumentsResponse,
   RagChatResponse,
   SearchResponse
 } from "@/types/api";
@@ -58,6 +59,10 @@ export function getHealth() {
   return requestJson<HealthResponse>("/health");
 }
 
+export function listDocuments() {
+  return requestJson<ListDocumentsResponse>("/documents");
+}
+
 export type IndexFilesInput = {
   files: File[];
   splitterType: string;
@@ -98,7 +103,7 @@ export function chatWithRag(input: {
   });
 }
 
-export function deleteDocuments(input: { ids?: string[] | null; source?: string | null }) {
+export function deleteDocuments(input: { ids?: string[] | null; source?: string | null; source_id?: string | null }) {
   return requestJson<DeleteDocumentResponse>("/documents", {
     method: "DELETE",
     body: JSON.stringify(input)

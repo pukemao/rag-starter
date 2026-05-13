@@ -1,4 +1,4 @@
-import { Activity, Database, FileUp, MessageSquareText, Search, Trash2 } from "lucide-react";
+import { Activity, Database, FileStack, FileUp, MessageSquareText, Search, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 
@@ -6,7 +6,8 @@ import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { to: "/", label: "状态", icon: Activity },
+  { to: "/knowledge", label: "知识库", icon: FileStack },
+  { to: "/status", label: "状态", icon: Activity },
   { to: "/index", label: "索引", icon: FileUp },
   { to: "/search", label: "检索", icon: Search },
   { to: "/chat", label: "RAG 对话", icon: MessageSquareText },
@@ -36,7 +37,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                 <NavLink
                   key={item.to}
                   to={item.to}
-                  end={item.to === "/"}
+                  end={item.to === "/knowledge"}
                   className={({ isActive }) =>
                     cn(
                       "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
@@ -76,7 +77,7 @@ export function AppShell({ children }: { children: ReactNode }) {
                   <NavLink
                     key={item.to}
                     to={item.to}
-                    end={item.to === "/"}
+                    end={item.to === "/knowledge"}
                     className={({ isActive }) =>
                       cn(
                         "inline-flex min-h-11 shrink-0 items-center gap-2 rounded-md border px-3 text-sm font-medium text-muted-foreground",
