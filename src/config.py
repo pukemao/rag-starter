@@ -9,6 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from os import getenv
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 
 def _get_int(name: str, default: int) -> int:
     raw = getenv(name)

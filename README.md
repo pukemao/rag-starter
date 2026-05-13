@@ -9,7 +9,8 @@
 ```bash
 pip install langchain-community langchain-core
 pip install langchain-text-splitters
-pip install langchain-chroma chromadb fastapi uvicorn python-multipart httpx
+pip install langchain-chroma chromadb fastapi uvicorn python-multipart
+pip install langchain-openai
 ```
 
 不同格式会需要额外依赖。建议在需要覆盖办公文档、图片 OCR、EPUB 等格式时安装：
@@ -41,6 +42,14 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-doc
 | `DEEPSEEK_TEMPERATURE` | `0.2` | 生成温度 |
 | `DEEPSEEK_MAX_TOKENS` | `1024` | 单次回答最大 token 数 |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `60.0` | LLM 请求超时时间 |
+
+本地开发可以在项目根目录创建 `.env`，项目启动时会自动读取：
+
+```bash
+DEEPSEEK_API_KEY="sk-..."
+```
+
+`.env` 已加入 `.gitignore`，不要把真实 API Key 提交到远程仓库。
 
 ## 快速使用
 
@@ -104,7 +113,7 @@ print(result.answer)
 print(result.references)
 ```
 
-流程为：用户问题 -> 本地 embedding -> Chroma 相似度检索 -> 返回 top-k 知识库段落 -> 拼接最终 prompt -> DeepSeek LLM -> 返回回答、prompt 和引用段落。
+流程为：用户问题 -> LangChain embedding -> LangChain Chroma 相似度检索 -> 返回 top-k 知识库段落 -> 拼接最终 prompt -> LangChain ChatOpenAI 兼容方式调用 DeepSeek LLM -> 返回回答、prompt 和引用段落。
 
 索引入库前会执行文件内 chunk 去重：同一个文件切出的重复 chunk 只写入一次；不同文件里的相同 chunk 会分别保留，方便后续删除某个上传文件时只删除该文件对应的数据。
 
