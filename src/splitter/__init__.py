@@ -7,6 +7,7 @@ from .registry import (
     load_and_split_documents,
     split_excel_file,
     split_markdown_file,
+    split_word_file,
     split_documents,
     supported_splitters,
 )
@@ -19,6 +20,7 @@ __all__ = [
     "load_and_split_documents",
     "split_excel_file",
     "split_markdown_file",
+    "split_word_file",
     "split_documents",
     "supported_splitters",
 ]

@@ -48,7 +48,7 @@ docs = load_directory("data", recursive=True)
 | `html.py` | `.html`, `.htm` | `BSHTMLLoader` |
 | `mhtml.py` | `.mht`, `.mhtml` | `MHTMLLoader` |
 | `xml.py` | `.xml` | `UnstructuredXMLLoader` |
-| `word.py` | `.doc`, `.docx` | `UnstructuredWordDocumentLoader` |
+| `word.py` | `.doc`, `.docx` | `UnstructuredWordDocumentLoader`；通过 `load_and_split_documents()` 入库时会走标题感知切分 |
 | `powerpoint.py` | `.ppt`, `.pptx` | `UnstructuredPowerPointLoader` |
 | `excel.py` | `.xls`, `.xlsx` | `UnstructuredExcelLoader`；通过 `load_and_split_documents()` 入库时会走表格感知切分 |
 | `email.py` | `.eml`, `.msg` | `UnstructuredEmailLoader` |

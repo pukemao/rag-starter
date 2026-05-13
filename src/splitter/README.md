@@ -57,6 +57,22 @@ chunks = load_and_split_documents(
 
 metadata 中会保留 `h1`、`h2` 等标题层级，便于后续展示来源或过滤。
 
+## Word 优化
+
+`load_and_split_documents()` 对 `.doc`、`.docx` 有专门处理：先按标题层级聚合章节，再使用 `RecursiveCharacterTextSplitter` 控制 chunk 大小。
+
+`.docx` 会通过 `python-docx` 读取 Word 段落样式，识别 `Heading 1`、`Heading 2`、`标题 1` 等标题层级；`.doc` 会继续使用 LangChain/Unstructured 加载器，但会把 `Title`、`Header` 元素与后续正文重新聚合，避免标题单独成为一个过短 chunk。
+
+最终 chunk 会尽量保持：
+
+```text
+# 一级标题
+## 二级标题
+正文段落
+```
+
+当某个章节很长、需要 recursive 二次切分时，后续子 chunk 会自动补回 `heading_context`，保证检索命中正文片段时仍能带上所属标题。metadata 会保留 `h1`、`h2`、`heading_context` 和 `chunk_type=word_section`，便于 RAG 提示词构造和来源展示。
+
 ## Excel 优化
 
 `load_and_split_documents()` 对 `.xls`、`.xlsx` 也有专门处理。表格文件不会直接交给通用字符分割器，而是先按工作表读取，再把表头和数据行组织成适合检索的文本：

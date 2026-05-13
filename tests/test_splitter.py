@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from src.splitter import SplitterConfig, create_splitter, load_and_split_documents, split_documents, supported_splitters
 from src.splitter.excel import ExcelSheet, _build_excel_documents
+from src.splitter.word import WordBlock, build_word_sections_from_blocks, ensure_word_heading_context
 
 
 class FakeRecursiveCharacterTextSplitter:
@@ -173,6 +174,61 @@ class SplitterTests(unittest.TestCase):
 
         self.assertEqual(chunks[0].page_content, expected[0].page_content)
         self.assertIn("名称=苹果；数量=2", chunks[0].page_content)
+
+    def test_word_sections_keep_heading_with_body(self):
+        chunks = build_word_sections_from_blocks(
+            Path("plan.docx"),
+            [
+                WordBlock("项目背景", kind="heading", level=1),
+                WordBlock("这是项目背景正文。"),
+                WordBlock("实施计划", kind="heading", level=2),
+                WordBlock("这是实施计划正文。"),
+            ],
+            filetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+        self.assertEqual(len(chunks), 2)
+        self.assertIn("# 项目背景", chunks[0].page_content)
+        self.assertIn("这是项目背景正文。", chunks[0].page_content)
+        self.assertIn("# 项目背景", chunks[1].page_content)
+        self.assertIn("## 实施计划", chunks[1].page_content)
+        self.assertIn("这是实施计划正文。", chunks[1].page_content)
+        self.assertEqual(chunks[1].metadata["h1"], "项目背景")
+        self.assertEqual(chunks[1].metadata["h2"], "实施计划")
+        self.assertEqual(chunks[1].metadata["chunk_type"], "word_section")
+
+    def test_word_heading_context_is_repeated_after_recursive_split(self):
+        from langchain_core.documents import Document
+
+        chunk = Document(
+            page_content="拆分后的正文片段",
+            metadata={"heading_context": "# 项目背景\n## 实施计划"},
+        )
+
+        result = ensure_word_heading_context(chunk)
+
+        self.assertTrue(result.page_content.startswith("# 项目背景\n## 实施计划"))
+        self.assertIn("拆分后的正文片段", result.page_content)
+
+    def test_word_load_and_split_uses_word_specific_path(self):
+        from langchain_core.documents import Document
+
+        fake_module = types.ModuleType("langchain_text_splitters")
+        fake_module.RecursiveCharacterTextSplitter = FakeRecursiveDocumentSplitter
+
+        with patch("src.splitter.registry.build_word_sections") as build_sections:
+            build_sections.return_value = [
+                Document(
+                    page_content="# 标题\n\n正文",
+                    metadata={"source": "brief.doc", "heading_context": "# 标题"},
+                )
+            ]
+            with patch.dict(sys.modules, {"langchain_text_splitters": fake_module}):
+                chunks = load_and_split_documents(Path("brief.doc"), chunk_size=100, chunk_overlap=0)
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("# 标题", chunks[0].page_content)
+        build_sections.assert_called_once()
 
 
 if __name__ == "__main__":

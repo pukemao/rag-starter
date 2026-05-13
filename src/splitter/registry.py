@@ -13,6 +13,7 @@ from src.config import settings
 
 from .base import SplitterConfig, SplitterDependencyError
 from .excel import split_excel_file
+from .word import build_word_sections, ensure_word_heading_context
 
 DEFAULT_SPLITTER = settings.splitter.default_type
 
@@ -26,6 +27,7 @@ _SPLITTERS: dict[str, str] = {
 
 _MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 _EXCEL_EXTENSIONS = {".xls", ".xlsx"}
+_WORD_EXTENSIONS = {".doc", ".docx"}
 _MARKDOWN_HEADERS = (
     ("#", "h1"),
     ("##", "h2"),
@@ -147,6 +149,29 @@ def split_markdown_file(
     )
 
 
+def split_word_file(
+    file_path: str | Path,
+    *,
+    splitter: Any | None = None,
+    chunk_size: int = settings.splitter.default_chunk_size,
+    chunk_overlap: int = settings.splitter.default_chunk_overlap,
+    loader_kwargs: dict[str, Any] | None = None,
+    **splitter_kwargs: Any,
+) -> list[Any]:
+    """Split Word documents by heading-aware sections first."""
+
+    sections = build_word_sections(file_path, loader_kwargs=loader_kwargs)
+    chunks = split_documents(
+        sections,
+        splitter=splitter,
+        splitter_type="recursive",
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        **splitter_kwargs,
+    )
+    return [ensure_word_heading_context(chunk) for chunk in chunks]
+
+
 def load_and_split_documents(
     file_path: str | Path,
     *,
@@ -172,6 +197,14 @@ def load_and_split_documents(
             path,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
+        )
+    if path.suffix.lower() in _WORD_EXTENSIONS and splitter is None:
+        return split_word_file(
+            path,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            loader_kwargs=loader_kwargs,
+            **(splitter_kwargs or {}),
         )
 
     documents = load_documents(file_path, **(loader_kwargs or {}))
