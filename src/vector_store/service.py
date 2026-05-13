@@ -198,7 +198,7 @@ class VectorStoreService:
         self,
         query: str,
         *,
-        k: int = 4,
+        k: int = settings.rag.default_top_k,
         filter: dict[str, Any] | None = None,
     ) -> list[SearchResult]:
         """Search similar chunks from the vector database."""

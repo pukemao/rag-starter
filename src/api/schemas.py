@@ -53,7 +53,7 @@ class DeleteDocumentResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
-    k: int = Field(default=4, gt=0)
+    k: int = Field(default=settings.rag.default_top_k, gt=0)
     filter: dict[str, Any] | None = None
 
 
@@ -65,3 +65,28 @@ class SearchResultResponse(BaseModel):
 
 class SearchResponse(BaseModel):
     results: list[SearchResultResponse]
+
+
+class RagChatRequest(BaseModel):
+    question: str = Field(..., min_length=1)
+    k: int = Field(default=settings.rag.default_top_k, gt=0)
+    filter: dict[str, Any] | None = None
+    system_prompt: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+
+
+class RagReferenceResponse(BaseModel):
+    index: int
+    page_content: str
+    metadata: dict[str, Any] = Field(default_factory=dict)
+    score: float | None = None
+
+
+class RagChatResponse(BaseModel):
+    answer: str
+    question: str
+    prompt: str
+    references: list[RagReferenceResponse]
+    model: str
+    usage: dict[str, Any] = Field(default_factory=dict)

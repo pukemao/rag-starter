@@ -20,6 +20,16 @@ def _get_int(name: str, default: int) -> int:
         raise ValueError(f"环境变量 {name} 必须是整数") from exc
 
 
+def _get_float(name: str, default: float) -> float:
+    raw = getenv(name)
+    if raw is None or raw == "":
+        return default
+    try:
+        return float(raw)
+    except ValueError as exc:
+        raise ValueError(f"环境变量 {name} 必须是数字") from exc
+
+
 @dataclass(frozen=True, slots=True)
 class ApiSettings:
     title: str = getenv("RAG_API_TITLE", "RAG Starter API")
@@ -45,11 +55,33 @@ class VectorStoreSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class RagSettings:
+    default_top_k: int = _get_int("RAG_TOP_K", 4)
+    system_prompt: str = getenv(
+        "RAG_SYSTEM_PROMPT",
+        "你是一个严谨的知识库问答助手。请优先依据参考段落回答；如果参考段落不足以回答，请明确说明无法从知识库中确认。",
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class LlmSettings:
+    provider: str = getenv("RAG_LLM_PROVIDER", "deepseek")
+    api_key: str = getenv("DEEPSEEK_API_KEY", "")
+    base_url: str = getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
+    model: str = getenv("DEEPSEEK_MODEL", "deepseek-v4-flash")
+    temperature: float = _get_float("DEEPSEEK_TEMPERATURE", 0.2)
+    max_tokens: int = _get_int("DEEPSEEK_MAX_TOKENS", 1024)
+    timeout_seconds: float = _get_float("DEEPSEEK_TIMEOUT_SECONDS", 60.0)
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     api: ApiSettings = ApiSettings()
     splitter: SplitterSettings = SplitterSettings()
     embedding: EmbeddingSettings = EmbeddingSettings()
     vector_store: VectorStoreSettings = VectorStoreSettings()
+    rag: RagSettings = RagSettings()
+    llm: LlmSettings = LlmSettings()
 
 
 settings = AppSettings()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import unittest
 
+from src.rag import RagAnswer, RagReference
 from src.vector_store import IndexResult, SearchResult
 
 
@@ -38,6 +39,31 @@ class FakeService:
         return [SearchResult(page_content="hello", metadata={"source": "a.txt"}, score=0.5)]
 
 
+class FakeRagService:
+    def __init__(self) -> None:
+        self.answer_requests = []
+
+    def answer(self, question, *, k=4, filter=None, system_prompt=None, temperature=None, max_tokens=None):
+        self.answer_requests.append(
+            {
+                "question": question,
+                "k": k,
+                "filter": filter,
+                "system_prompt": system_prompt,
+                "temperature": temperature,
+                "max_tokens": max_tokens,
+            }
+        )
+        return RagAnswer(
+            answer="rag answer",
+            question=question,
+            prompt="prompt with references",
+            references=[RagReference(index=1, page_content="hello", metadata={"source": "a.txt"}, score=0.5)],
+            model="deepseek-test",
+            usage={"total_tokens": 8},
+        )
+
+
 class ApiTests(unittest.TestCase):
     def setUp(self):
         try:
@@ -48,7 +74,8 @@ class ApiTests(unittest.TestCase):
         from src.api import create_app
 
         self.service = FakeService()
-        self.client = TestClient(create_app(service=self.service))
+        self.rag_service = FakeRagService()
+        self.client = TestClient(create_app(service=self.service, rag_service=self.rag_service))
 
     def test_health(self):
         response = self.client.get("/health")
@@ -139,6 +166,36 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(
             response.json(),
             {"results": [{"page_content": "hello", "metadata": {"source": "a.txt"}, "score": 0.5}]},
+        )
+
+    def test_rag_chat(self):
+        response = self.client.post(
+            "/rag/chat",
+            json={"question": "hello?", "k": 1, "filter": {"source": "a.txt"}, "temperature": 0.1, "max_tokens": 128},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {
+                "answer": "rag answer",
+                "question": "hello?",
+                "prompt": "prompt with references",
+                "references": [{"index": 1, "page_content": "hello", "metadata": {"source": "a.txt"}, "score": 0.5}],
+                "model": "deepseek-test",
+                "usage": {"total_tokens": 8},
+            },
+        )
+        self.assertEqual(
+            self.rag_service.answer_requests[0],
+            {
+                "question": "hello?",
+                "k": 1,
+                "filter": {"source": "a.txt"},
+                "system_prompt": None,
+                "temperature": 0.1,
+                "max_tokens": 128,
+            },
         )
 
 

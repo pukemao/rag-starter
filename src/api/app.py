@@ -9,6 +9,8 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 
 from src.config import settings
+from src.llm import LLMConfigurationError
+from src.rag import RagService
 from src.vector_store import DuplicateFileError, VectorStoreService
 
 from .schemas import (
@@ -18,6 +20,9 @@ from .schemas import (
     DeleteDocumentResponse,
     IndexFileResponse,
     IndexResponse,
+    RagChatRequest,
+    RagChatResponse,
+    RagReferenceResponse,
     SearchRequest,
     SearchResponse,
     SearchResultResponse,
@@ -35,18 +40,22 @@ def _duplicate_file_response(exc: DuplicateFileError) -> HTTPException:
     )
 
 
-def create_app(service: VectorStoreService | None = None) -> FastAPI:
+def create_app(service: VectorStoreService | None = None, rag_service: RagService | None = None) -> FastAPI:
     """Create the FastAPI app.
 
-    Passing ``service`` is mainly useful for tests. When omitted, the app uses
-    the default persistent local Chroma database from ``src.config``.
+    Passing services is mainly useful for tests. When omitted, the app uses the
+    default persistent local Chroma database and configured LLM from ``src.config``.
     """
 
     app = FastAPI(title=settings.api.title, version=settings.api.version)
     vector_service = service or VectorStoreService()
+    active_rag_service = rag_service or RagService(vector_service=vector_service)
 
     def get_service() -> VectorStoreService:
         return vector_service
+
+    def get_rag_service() -> RagService:
+        return active_rag_service
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -182,6 +191,41 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
                 )
                 for result in results
             ]
+        )
+
+    @app.post("/rag/chat", response_model=RagChatResponse)
+    def rag_chat(
+        request: RagChatRequest,
+        active_service: RagService = Depends(get_rag_service),
+    ) -> RagChatResponse:
+        try:
+            result = active_service.answer(
+                request.question,
+                k=request.k,
+                filter=request.filter,
+                system_prompt=request.system_prompt,
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+        except LLMConfigurationError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return RagChatResponse(
+            answer=result.answer,
+            question=result.question,
+            prompt=result.prompt,
+            references=[
+                RagReferenceResponse(
+                    index=reference.index,
+                    page_content=reference.page_content,
+                    metadata=reference.metadata,
+                    score=reference.score,
+                )
+                for reference in result.references
+            ],
+            model=result.model,
+            usage=result.usage,
         )
 
     return app

@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "chromadb",
     "fastapi",
+    "httpx",
     "langchain-community",
     "langchain-chroma",
     "langchain-core",

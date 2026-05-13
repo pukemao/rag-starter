@@ -11,6 +11,8 @@ class ConfigTests(unittest.TestCase):
     def test_defaults_are_centralized(self):
         self.assertEqual(settings.api.title, "RAG Starter API")
         self.assertEqual(settings.splitter.default_type, DEFAULT_SPLITTER)
+        self.assertEqual(settings.rag.default_top_k, 4)
+        self.assertEqual(settings.llm.provider, "deepseek")
 
         config = VectorStoreConfig()
         self.assertEqual(config.persist_directory, settings.vector_store.persist_directory)
