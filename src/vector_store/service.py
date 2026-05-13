@@ -12,7 +12,7 @@ from langchain_core.embeddings import Embeddings
 
 from src.splitter import load_and_split_documents
 
-from .base import IndexResult, SearchResult, VectorStoreConfig
+from .base import DuplicateFileError, IndexResult, SearchResult, VectorStoreConfig
 from .chroma import create_chroma_vector_store
 
 _WHITESPACE_PATTERN = re.compile(r"\s+")
@@ -110,30 +110,72 @@ class VectorStoreService:
         splitter_kwargs: dict[str, Any] | None = None,
         source_label: str | None = None,
         source_id: str | None = None,
+        file_hash: str | None = None,
+        reject_duplicate_file: bool = False,
     ) -> IndexResult:
         """Load, split, deduplicate within one file, and add it to the vector database."""
 
+        path = Path(file_path)
+        active_file_hash = file_hash or self.compute_file_hash(path)
+        if reject_duplicate_file and self.file_exists(active_file_hash):
+            raise DuplicateFileError(source_label or path.name, active_file_hash)
+
         chunks = load_and_split_documents(
-            file_path,
+            path,
             loader_kwargs=loader_kwargs,
             splitter_type=splitter_type,
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             splitter_kwargs=splitter_kwargs,
         )
-        if source_label or source_id:
-            chunks = [
-                Document(
-                    page_content=chunk.page_content,
-                    metadata=self._rewrite_metadata(
-                        chunk.metadata,
-                        source_label=source_label,
-                        source_id=source_id,
-                    ),
-                )
-                for chunk in chunks
-            ]
+        chunks = [
+            Document(
+                page_content=chunk.page_content,
+                metadata=self._rewrite_metadata(
+                    chunk.metadata,
+                    source_label=source_label,
+                    source_id=source_id,
+                    file_hash=active_file_hash,
+                ),
+            )
+            for chunk in chunks
+        ]
         return self.index_documents(chunks)
+
+    def file_exists(self, file_hash: str) -> bool:
+        """Return whether a file hash already exists in the vector database."""
+
+        if not file_hash:
+            return False
+
+        stores = [self.vector_store, getattr(self.vector_store, "_collection", None)]
+        for store in stores:
+            if store is None or not hasattr(store, "get"):
+                continue
+            try:
+                result = store.get(where={"file_hash": file_hash}, limit=1)
+            except TypeError:
+                result = store.get(where={"file_hash": file_hash})
+            ids = result.get("ids") if isinstance(result, dict) else None
+            if ids:
+                return True
+        return False
+
+    @staticmethod
+    def compute_file_hash(file_path: str | Path) -> str:
+        """Compute SHA-256 for a local file."""
+
+        digest = hashlib.sha256()
+        with Path(file_path).open("rb") as file:
+            for chunk in iter(lambda: file.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+
+    @staticmethod
+    def compute_content_hash(content: bytes) -> str:
+        """Compute SHA-256 for uploaded file bytes."""
+
+        return hashlib.sha256(content).hexdigest()
 
     def delete(self, *, ids: list[str] | None = None, source: str | None = None) -> int | None:
         """Delete documents by ids or by ``metadata.source``."""
@@ -193,12 +235,15 @@ class VectorStoreService:
         *,
         source_label: str | None = None,
         source_id: str | None = None,
+        file_hash: str | None = None,
     ) -> dict[str, Any]:
         updated = dict(metadata)
         if source_label is not None:
             updated["source"] = source_label
         if source_id is not None:
             updated["source_id"] = source_id
+        if file_hash is not None:
+            updated["file_hash"] = file_hash
         return updated
 
     @staticmethod

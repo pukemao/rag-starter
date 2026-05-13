@@ -71,6 +71,8 @@ results = service.search("项目背景", k=3)
 
 索引入库前会执行文件内 chunk 去重：同一个文件切出的重复 chunk 只写入一次；不同文件里的相同 chunk 会分别保留，方便后续删除某个上传文件时只删除该文件对应的数据。
 
+上传索引会先计算文件内容 SHA-256，并检查向量库 metadata 中是否已存在相同 `file_hash`。重复文件不会入库，接口返回 `409`，响应体中包含 `message`、`filename` 和 `file_hash`。
+
 写入本地向量库：
 
 ```python
@@ -96,7 +98,17 @@ uvicorn src.api.main:app --reload
 - `DELETE /documents`: 按 `ids` 或 `source` 删除向量库记录
 - `POST /search`: 相似度检索
 
-`POST /index` 会返回每个文件的 `filename`、`source_id`、`ids`、写入 chunk 数量、输入 chunk 数量和跳过的重复 chunk 数量，方便后续追踪、删除和观察去重效果。
+`POST /index` 会返回每个文件的 `filename`、`source_id`、`ids`、写入 chunk 数量、输入 chunk 数量和跳过的重复 chunk 数量，方便后续追踪、删除和观察去重效果。若上传重复文件，会返回类似：
+
+```json
+{
+  "detail": {
+    "message": "文件 report.pdf 已存在，不允许重复上传",
+    "filename": "report.pdf",
+    "file_hash": "..."
+  }
+}
+```
 
 示例：
 

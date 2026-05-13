@@ -28,6 +28,15 @@ class FakeVectorStore:
         self.documents.extend(documents)
         self.ids.extend(ids)
 
+    def get(self, *, where, limit=None):
+        ids = []
+        for doc_id, document in zip(self.ids, self.documents):
+            if all(document.metadata.get(key) == value for key, value in where.items()):
+                ids.append(doc_id)
+                if limit is not None and len(ids) >= limit:
+                    break
+        return {"ids": ids}
+
     def delete(self, *, ids):
         self.deleted_ids.extend(ids)
 
@@ -48,6 +57,15 @@ class VectorStoreServiceTests(unittest.TestCase):
         self.assertTrue(ids[0].startswith("doc-"))
         self.assertIn("chunk_hash", store.documents[0].metadata)
         self.assertEqual(store.documents[0].metadata["chunk_index"], 0)
+
+    def test_file_exists_checks_file_hash_metadata(self):
+        store = FakeVectorStore()
+        service = VectorStoreService(vector_store=store)
+
+        service.add_documents([Document(page_content="hello", metadata={"source": "a.txt", "file_hash": "hash-1"})])
+
+        self.assertTrue(service.file_exists("hash-1"))
+        self.assertFalse(service.file_exists("missing"))
 
     def test_index_documents_deduplicates_within_one_batch_only(self):
         store = FakeVectorStore()
@@ -118,6 +136,22 @@ class VectorStoreServiceTests(unittest.TestCase):
         self.assertGreaterEqual(len(ids), 2)
         self.assertEqual(results[0].metadata["source"], "kb.txt")
         self.assertEqual(results[0].metadata["source_id"], "upload-1")
+        self.assertIn("file_hash", results[0].metadata)
+
+    def test_index_file_rejects_duplicate_file_hash(self):
+        with TemporaryDirectory() as tmpdir:
+            file_path = Path(tmpdir) / "same.txt"
+            file_path.write_text("same file", encoding="utf-8")
+            store = FakeVectorStore()
+            service = VectorStoreService(vector_store=store)
+
+            first = service.index_file(file_path, source_label="same.txt", reject_duplicate_file=True)
+
+            with self.assertRaises(Exception) as error:
+                service.index_file(file_path, source_label="same.txt", reject_duplicate_file=True)
+
+        self.assertEqual(first.added_count, 1)
+        self.assertIn("不允许重复上传", str(error.exception))
 
 
 if __name__ == "__main__":

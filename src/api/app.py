@@ -8,7 +8,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 
-from src.vector_store import VectorStoreService
+from src.vector_store import DuplicateFileError, VectorStoreService
 
 from .schemas import (
     AddDocumentRequest,
@@ -21,6 +21,17 @@ from .schemas import (
     SearchResponse,
     SearchResultResponse,
 )
+
+
+def _duplicate_file_response(exc: DuplicateFileError) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail={
+            "message": exc.message,
+            "filename": exc.filename,
+            "file_hash": exc.file_hash,
+        },
+    )
 
 
 def create_app(service: VectorStoreService | None = None) -> FastAPI:
@@ -53,7 +64,10 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
                 chunk_size=request.chunk_size,
                 chunk_overlap=request.chunk_overlap,
                 splitter_kwargs=request.splitter_kwargs,
+                reject_duplicate_file=True,
             )
+        except DuplicateFileError as exc:
+            raise _duplicate_file_response(exc) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return AddDocumentResponse(
@@ -79,37 +93,54 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
         try:
             with TemporaryDirectory() as tmpdir:
                 temp_root = Path(tmpdir)
+                prepared_files: list[tuple[str, str, str, bytes]] = []
+                seen_hashes: dict[str, str] = {}
                 for upload in files:
                     try:
                         filename = Path(upload.filename or "upload.bin").name
                         source_id = uuid4().hex
-                        temp_path = temp_root / f"{source_id}_{filename}"
                         content = await upload.read()
-                        temp_path.write_bytes(content)
+                        file_hash = active_service.compute_content_hash(content)
 
-                        result = active_service.index_file(
-                            temp_path,
-                            splitter_type=splitter_type,
-                            chunk_size=chunk_size,
-                            chunk_overlap=chunk_overlap,
-                            source_label=filename,
-                            source_id=source_id,
-                        )
-                        indexed_files.append(
-                            IndexFileResponse(
-                                filename=filename,
-                                source_id=source_id,
-                                ids=result.ids,
-                                count=result.added_count,
-                                input_count=result.input_count,
-                                skipped_duplicates=result.skipped_duplicates,
-                            )
-                        )
-                        total_chunks += result.added_count
-                        total_input_chunks += result.input_count
-                        total_skipped_duplicates += result.skipped_duplicates
+                        if file_hash in seen_hashes:
+                            raise DuplicateFileError(filename, file_hash)
+                        if active_service.file_exists(file_hash):
+                            raise DuplicateFileError(filename, file_hash)
+
+                        seen_hashes[file_hash] = filename
+                        prepared_files.append((filename, source_id, file_hash, content))
                     finally:
                         await upload.close()
+
+                for filename, source_id, file_hash, content in prepared_files:
+                    temp_path = temp_root / f"{source_id}_{filename}"
+                    temp_path.write_bytes(content)
+
+                    result = active_service.index_file(
+                        temp_path,
+                        splitter_type=splitter_type,
+                        chunk_size=chunk_size,
+                        chunk_overlap=chunk_overlap,
+                        source_label=filename,
+                        source_id=source_id,
+                        file_hash=file_hash,
+                        reject_duplicate_file=False,
+                    )
+                    indexed_files.append(
+                        IndexFileResponse(
+                            filename=filename,
+                            source_id=source_id,
+                            ids=result.ids,
+                            count=result.added_count,
+                            input_count=result.input_count,
+                            skipped_duplicates=result.skipped_duplicates,
+                        )
+                    )
+                    total_chunks += result.added_count
+                    total_input_chunks += result.input_count
+                    total_skipped_duplicates += result.skipped_duplicates
+        except DuplicateFileError as exc:
+            raise _duplicate_file_response(exc) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 

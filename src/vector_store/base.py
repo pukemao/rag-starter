@@ -10,6 +10,16 @@ class VectorStoreDependencyError(ImportError):
     """Raised when vector database dependencies are unavailable."""
 
 
+class DuplicateFileError(ValueError):
+    """Raised when a file has already been indexed."""
+
+    def __init__(self, filename: str, file_hash: str) -> None:
+        self.filename = filename
+        self.file_hash = file_hash
+        self.message = f"文件 {filename} 已存在，不允许重复上传"
+        super().__init__(self.message)
+
+
 @dataclass(frozen=True, slots=True)
 class VectorStoreConfig:
     """Configuration for the local vector database."""

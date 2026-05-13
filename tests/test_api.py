@@ -10,6 +10,7 @@ class FakeService:
         self.add_requests = []
         self.delete_requests = []
         self.search_requests = []
+        self.existing_file_hashes = set()
 
     def add_file(self, path, **kwargs):
         self.add_requests.append((path, kwargs))
@@ -18,6 +19,15 @@ class FakeService:
     def index_file(self, path, **kwargs):
         self.add_requests.append((path, kwargs))
         return IndexResult(ids=["id-1", "id-2"], input_count=3, added_count=2, skipped_duplicates=1)
+
+    def file_exists(self, file_hash):
+        return file_hash in self.existing_file_hashes
+
+    @staticmethod
+    def compute_content_hash(content):
+        from hashlib import sha256
+
+        return sha256(content).hexdigest()
 
     def delete(self, *, ids=None, source=None):
         self.delete_requests.append({"ids": ids, "source": source})
@@ -86,6 +96,35 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(first_call["chunk_overlap"], 32)
         self.assertEqual(first_call["source_label"], "note.md")
         self.assertTrue(first_call["source_id"])
+        self.assertTrue(first_call["file_hash"])
+
+    def test_index_upload_rejects_duplicate_file_in_same_request(self):
+        response = self.client.post(
+            "/index",
+            files=[
+                ("files", ("first.txt", b"same content", "text/plain")),
+                ("files", ("second.txt", b"same content", "text/plain")),
+            ],
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertIn("不允许重复上传", response.json()["detail"]["message"])
+        self.assertEqual(response.json()["detail"]["filename"], "second.txt")
+        self.assertEqual(len(self.service.add_requests), 0)
+
+    def test_index_upload_rejects_existing_file_hash(self):
+        file_content = b"already indexed"
+        self.service.existing_file_hashes.add(self.service.compute_content_hash(file_content))
+
+        response = self.client.post(
+            "/index",
+            files=[("files", ("exists.txt", file_content, "text/plain"))],
+        )
+
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json()["detail"]["filename"], "exists.txt")
+        self.assertIn("message", response.json()["detail"])
+        self.assertEqual(len(self.service.add_requests), 0)
 
     def test_delete_document(self):
         response = self.client.request("DELETE", "/documents", json={"ids": ["id-1"]})
