@@ -13,7 +13,7 @@ SPEC = LoaderSpec(
     title="Excel",
     extensions=(".xls", ".xlsx"),
     module=__name__,
-    dependencies=("langchain-community", "unstructured", "openpyxl"),
+    dependencies=("langchain-community", "unstructured", "openpyxl", "xlrd"),
     description="Loads spreadsheets with LangChain UnstructuredExcelLoader.",
 )
 

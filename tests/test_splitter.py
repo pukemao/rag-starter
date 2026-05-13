@@ -8,6 +8,7 @@ import unittest
 from unittest.mock import patch
 
 from src.splitter import SplitterConfig, create_splitter, load_and_split_documents, split_documents, supported_splitters
+from src.splitter.excel import ExcelSheet, _build_excel_documents
 
 
 class FakeRecursiveCharacterTextSplitter:
@@ -98,6 +99,80 @@ class SplitterTests(unittest.TestCase):
         self.assertIn("# 标题二", chunks[1].page_content)
         self.assertIn("正文二", chunks[1].page_content)
         self.assertEqual(chunks[0].metadata["filename"], "note.md")
+
+    def test_excel_split_keeps_header_sheet_and_row_together(self):
+        chunks = _build_excel_documents(
+            Path("sales.xlsx"),
+            [
+                ExcelSheet(
+                    name="订单",
+                    index=0,
+                    rows=[
+                        ["订单明细"],
+                        ["订单号", "客户", "金额"],
+                        ["A001", "张三", 120],
+                        ["A002", "李四", 300],
+                    ],
+                )
+            ],
+            chunk_size=1000,
+            chunk_overlap=0,
+        )
+
+        self.assertEqual(len(chunks), 1)
+        self.assertIn("文件: sales.xlsx", chunks[0].page_content)
+        self.assertIn("工作表: 订单", chunks[0].page_content)
+        self.assertIn("表格说明: 订单明细", chunks[0].page_content)
+        self.assertIn("表头: 订单号 | 客户 | 金额", chunks[0].page_content)
+        self.assertIn("第3行: 订单号=A001；客户=张三；金额=120", chunks[0].page_content)
+        self.assertEqual(chunks[0].metadata["sheet_name"], "订单")
+        self.assertEqual(chunks[0].metadata["start_row"], 3)
+        self.assertEqual(chunks[0].metadata["end_row"], 4)
+        self.assertEqual(chunks[0].metadata["chunk_type"], "excel_table")
+
+    def test_excel_split_chunks_by_complete_rows_and_repeats_header(self):
+        chunks = _build_excel_documents(
+            Path("inventory.xls"),
+            [
+                ExcelSheet(
+                    name="库存",
+                    index=0,
+                    rows=[
+                        ["SKU", "商品", "库存"],
+                        ["P001", "超长商品名称" * 8, 15],
+                        ["P002", "另一个商品名称" * 8, 8],
+                    ],
+                )
+            ],
+            chunk_size=95,
+            chunk_overlap=0,
+        )
+
+        self.assertEqual(len(chunks), 2)
+        for chunk in chunks:
+            self.assertIn("工作表: 库存", chunk.page_content)
+            self.assertIn("表头: SKU | 商品 | 库存", chunk.page_content)
+        self.assertIn("SKU=P001", chunks[0].page_content)
+        self.assertNotIn("SKU=P002", chunks[0].page_content)
+        self.assertIn("SKU=P002", chunks[1].page_content)
+        self.assertEqual(chunks[0].metadata["filetype"], "application/vnd.ms-excel")
+
+    def test_excel_load_and_split_uses_excel_specific_path(self):
+        expected = _build_excel_documents(
+            Path("table.xlsx"),
+            [ExcelSheet(name="Sheet1", index=0, rows=[["名称", "数量"], ["苹果", 2]])],
+            chunk_size=1000,
+            chunk_overlap=0,
+        )
+
+        with patch("src.splitter.excel._load_workbook") as load_workbook:
+            load_workbook.return_value = [
+                ExcelSheet(name="Sheet1", index=0, rows=[["名称", "数量"], ["苹果", 2]])
+            ]
+            chunks = load_and_split_documents(Path("table.xlsx"), chunk_size=1000, chunk_overlap=0)
+
+        self.assertEqual(chunks[0].page_content, expected[0].page_content)
+        self.assertIn("名称=苹果；数量=2", chunks[0].page_content)
 
 
 if __name__ == "__main__":

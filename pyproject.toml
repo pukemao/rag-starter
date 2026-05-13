@@ -29,6 +29,7 @@ loaders = [
     "python-docx",
     "python-pptx",
     "unstructured[all-docs]",
+    "xlrd",
 ]
 dev = []
 

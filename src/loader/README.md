@@ -50,7 +50,7 @@ docs = load_directory("data", recursive=True)
 | `xml.py` | `.xml` | `UnstructuredXMLLoader` |
 | `word.py` | `.doc`, `.docx` | `UnstructuredWordDocumentLoader` |
 | `powerpoint.py` | `.ppt`, `.pptx` | `UnstructuredPowerPointLoader` |
-| `excel.py` | `.xls`, `.xlsx` | `UnstructuredExcelLoader` |
+| `excel.py` | `.xls`, `.xlsx` | `UnstructuredExcelLoader`；通过 `load_and_split_documents()` 入库时会走表格感知切分 |
 | `email.py` | `.eml`, `.msg` | `UnstructuredEmailLoader` |
 | `chm.py` | `.chm` | `UnstructuredCHMLoader` |
 | `epub.py` | `.epub` | `UnstructuredEPubLoader` |

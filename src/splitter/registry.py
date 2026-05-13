@@ -12,6 +12,7 @@ from src.loader import load_documents
 from src.config import settings
 
 from .base import SplitterConfig, SplitterDependencyError
+from .excel import split_excel_file
 
 DEFAULT_SPLITTER = settings.splitter.default_type
 
@@ -24,6 +25,7 @@ _SPLITTERS: dict[str, str] = {
 }
 
 _MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
+_EXCEL_EXTENSIONS = {".xls", ".xlsx"}
 _MARKDOWN_HEADERS = (
     ("#", "h1"),
     ("##", "h2"),
@@ -164,6 +166,12 @@ def load_and_split_documents(
             chunk_size=chunk_size,
             chunk_overlap=chunk_overlap,
             **(splitter_kwargs or {}),
+        )
+    if path.suffix.lower() in _EXCEL_EXTENSIONS and splitter is None:
+        return split_excel_file(
+            path,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
         )
 
     documents = load_documents(file_path, **(loader_kwargs or {}))

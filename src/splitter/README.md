@@ -56,3 +56,18 @@ chunks = load_and_split_documents(
 ```
 
 metadata 中会保留 `h1`、`h2` 等标题层级，便于后续展示来源或过滤。
+
+## Excel 优化
+
+`load_and_split_documents()` 对 `.xls`、`.xlsx` 也有专门处理。表格文件不会直接交给通用字符分割器，而是先按工作表读取，再把表头和数据行组织成适合检索的文本：
+
+```text
+文件: sales.xlsx
+工作表: 订单
+表头: 订单号 | 客户 | 金额
+第3行: 订单号=A001；客户=张三；金额=120
+```
+
+这种结构保证每个 chunk 都带有文件名、工作表名和列名语义，避免 RAG 只检索到单元格值却不知道该值对应哪个字段。大表会按完整数据行分块，并在每个 chunk 中重复表头；metadata 会保留 `sheet_name`、`sheet_index`、`start_row`、`end_row`、`row_count` 等信息。
+
+`.xlsx` 使用 `openpyxl` 读取，`.xls` 使用 `xlrd` 读取。缺少依赖时会返回明确的安装提示。

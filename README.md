@@ -16,7 +16,7 @@ pip install langchain-openai
 不同格式会需要额外依赖。建议在需要覆盖办公文档、图片 OCR、EPUB 等格式时安装：
 
 ```bash
-pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-docx python-pptx nbformat pillow pytesseract pysrt
+pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd python-docx python-pptx nbformat pillow pytesseract pysrt
 ```
 
 ## 统一配置
@@ -100,6 +100,8 @@ chunks = load_and_split_documents("docs/report.pdf")
 ```
 
 Markdown 文件在 `load_and_split_documents()` 中会优先按标题层级聚合，再做 recursive 二次切分，避免标题和正文落入不同 chunk。切分后的 metadata 会保留 `h1`、`h2` 等标题层级，提升 RAG 检索上下文完整性。
+
+Excel 文件在 `load_and_split_documents()` 中会使用表格感知切分：按工作表读取 `.xls`、`.xlsx`，自动识别表头，把文件名、工作表名、表头和完整数据行一起写入 chunk。这样可以避免通用文本切分把表头和单元格内容拆开，导致 RAG 检索命中某一行时缺少列名语义。`.xlsx` 依赖 `openpyxl`，`.xls` 依赖 `xlrd`。
 
 完整索引链路：
 
