@@ -59,7 +59,12 @@ class SplitterSettings:
 
 @dataclass(frozen=True, slots=True)
 class EmbeddingSettings:
-    dimension: int = _get_int("RAG_EMBEDDING_DIMENSION", 384)
+    provider: str = getenv("RAG_EMBEDDING_PROVIDER", "dashscope")
+    api_key: str = getenv("DASHSCOPE_API_KEY", "")
+    base_url: str = getenv("DASHSCOPE_BASE_URL", "https://dashscope.aliyuncs.com/compatible-mode/v1")
+    model: str = getenv("DASHSCOPE_EMBEDDING_MODEL", "text-embedding-v4")
+    dimension: int = _get_int("DASHSCOPE_EMBEDDING_DIMENSION", _get_int("RAG_EMBEDDING_DIMENSION", 2048))
+    timeout_seconds: float = _get_float("DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS", 60.0)
 
 
 @dataclass(frozen=True, slots=True)

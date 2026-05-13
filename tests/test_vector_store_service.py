@@ -5,6 +5,7 @@ from tempfile import TemporaryDirectory
 import unittest
 
 from langchain_core.documents import Document
+from langchain_core.embeddings import Embeddings
 
 from src.vector_store.chroma import create_chroma_vector_store
 from src.vector_store import VectorStoreConfig, VectorStoreService
@@ -43,6 +44,14 @@ class FakeVectorStore:
 
     def similarity_search_with_score(self, query, *, k, filter=None):
         return [(document, 0.12) for document in self.documents[:k]]
+
+
+class FakeEmbeddings(Embeddings):
+    def embed_documents(self, texts):
+        return [[float(index), 1.0] for index, _ in enumerate(texts)]
+
+    def embed_query(self, text):
+        return [1.0, 1.0]
 
 
 class VectorStoreServiceTests(unittest.TestCase):
@@ -123,7 +132,8 @@ class VectorStoreServiceTests(unittest.TestCase):
             )
 
             service = VectorStoreService(
-                config=VectorStoreConfig(persist_directory=tmpdir, collection_name="integration")
+                config=VectorStoreConfig(persist_directory=tmpdir, collection_name="integration", embedding_dimension=2),
+                embedding=FakeEmbeddings(),
             )
             ids = service.add_file(
                 file_path,
@@ -159,7 +169,10 @@ class VectorStoreServiceTests(unittest.TestCase):
             persist_directory = Path(tmpdir) / "missing" / "chroma"
 
             create_chroma_vector_store(
-                config=VectorStoreConfig(persist_directory=str(persist_directory), collection_name="mkdir-test")
+                config=VectorStoreConfig(
+                    persist_directory=str(persist_directory), collection_name="mkdir-test", embedding_dimension=2
+                ),
+                embedding=FakeEmbeddings(),
             )
 
             self.assertTrue(persist_directory.is_dir())

@@ -31,7 +31,12 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-doc
 | `RAG_SPLITTER_TYPE` | `recursive` | 默认分割器 |
 | `RAG_CHUNK_SIZE` | `1000` | 默认 chunk 大小 |
 | `RAG_CHUNK_OVERLAP` | `200` | 默认 chunk 重叠长度 |
-| `RAG_EMBEDDING_DIMENSION` | `384` | 本地 Hash embedding 维度 |
+| `RAG_EMBEDDING_PROVIDER` | `dashscope` | 默认 embedding 提供方 |
+| `DASHSCOPE_API_KEY` | 空 | 阿里云百炼 API Key，写入向量库和检索时必填 |
+| `DASHSCOPE_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 百炼 OpenAI 兼容接口地址 |
+| `DASHSCOPE_EMBEDDING_MODEL` | `text-embedding-v4` | 默认 embedding 模型 |
+| `DASHSCOPE_EMBEDDING_DIMENSION` | `2048` | `text-embedding-v4` 输出维度 |
+| `DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS` | `60.0` | embedding 请求超时时间 |
 | `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
 | `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
 | `RAG_TOP_K` | `4` | RAG 对话默认检索段落数 |
@@ -48,6 +53,7 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-doc
 
 ```bash
 DEEPSEEK_API_KEY="sk-..."
+DASHSCOPE_API_KEY="sk-..."
 ```
 
 `.env` 已加入 `.gitignore`，不要把真实 API Key 提交到远程仓库。
@@ -102,6 +108,8 @@ result = service.index_file("docs/report.pdf", source_label="report.pdf")
 print(result.ids, result.skipped_duplicates)
 results = service.search("项目背景", k=3)
 ```
+
+默认 embedding 使用阿里云百炼 `text-embedding-v4`，通过 LangChain `OpenAIEmbeddings` 连接百炼 OpenAI 兼容接口，默认输出 2048 维向量。切换 embedding 模型或维度后，需要删除旧的 Chroma 数据并重新索引知识库，因为同一个 Chroma collection 不能混用不同维度的向量。
 
 RAG 增强对话链路：
 

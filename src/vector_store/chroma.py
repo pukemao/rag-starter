@@ -8,7 +8,7 @@ from typing import Any
 
 from langchain_core.embeddings import Embeddings
 
-from src.embedding import HashEmbeddings
+from src.embedding import DashScopeEmbeddings
 
 from .base import VectorStoreConfig, VectorStoreDependencyError
 
@@ -24,7 +24,7 @@ def create_chroma_vector_store(
     active_config = config or VectorStoreConfig()
     persist_directory = Path(active_config.persist_directory)
     persist_directory.mkdir(parents=True, exist_ok=True)
-    active_embedding = embedding or HashEmbeddings(dimension=active_config.embedding_dimension)
+    active_embedding = embedding or DashScopeEmbeddings(dimension=active_config.embedding_dimension)
 
     try:
         module = import_module("langchain_chroma")

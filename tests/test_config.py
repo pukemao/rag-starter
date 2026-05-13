@@ -12,6 +12,9 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.api.title, "RAG Starter API")
         self.assertIn("http://localhost:5173", settings.api.cors_origins)
         self.assertEqual(settings.splitter.default_type, DEFAULT_SPLITTER)
+        self.assertEqual(settings.embedding.provider, "dashscope")
+        self.assertEqual(settings.embedding.model, "text-embedding-v4")
+        self.assertEqual(settings.embedding.dimension, 2048)
         self.assertEqual(settings.rag.default_top_k, 4)
         self.assertEqual(settings.llm.provider, "deepseek")
 
