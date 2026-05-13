@@ -279,7 +279,7 @@ export function KnowledgeBasePage() {
         onClose={() => setSearchOpen(false)}
         size="wide"
       >
-        <form className="space-y-5" onSubmit={onSearch}>
+        <form className="space-y-5 pb-6" onSubmit={onSearch}>
           <label className="space-y-2">
             <span className="text-sm font-medium">问题或关键词</span>
             <Textarea
@@ -305,7 +305,7 @@ export function KnowledgeBasePage() {
 
           {searchMutation.error ? <p className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">{searchMutation.error.message}</p> : null}
 
-          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
             <Button variant="outline" type="button" onClick={() => setSearchOpen(false)}>
               取消
             </Button>
@@ -317,7 +317,7 @@ export function KnowledgeBasePage() {
         </form>
 
         {searchMutation.data ? (
-          <div className="mt-6 border-t pt-5">
+          <div className="border-t bg-muted/30 px-5 py-5 -mx-5 -mb-5">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div>
                 <h3 className="text-sm font-semibold">查询结果</h3>
