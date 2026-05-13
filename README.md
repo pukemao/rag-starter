@@ -18,6 +18,21 @@ pip install langchain-chroma chromadb fastapi uvicorn python-multipart
 pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl python-docx python-pptx nbformat pillow pytesseract pysrt
 ```
 
+## 统一配置
+
+项目运行默认值集中在 [src/config.py](src/config.py)，API、分割器、embedding 和本地 Chroma 向量库都从这里读取默认配置。需要覆盖默认值时，可以通过环境变量配置：
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RAG_API_TITLE` | `RAG Starter API` | FastAPI 标题 |
+| `RAG_API_VERSION` | `0.1.0` | FastAPI 版本 |
+| `RAG_SPLITTER_TYPE` | `recursive` | 默认分割器 |
+| `RAG_CHUNK_SIZE` | `1000` | 默认 chunk 大小 |
+| `RAG_CHUNK_OVERLAP` | `200` | 默认 chunk 重叠长度 |
+| `RAG_EMBEDDING_DIMENSION` | `384` | 本地 Hash embedding 维度 |
+| `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
+| `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
+
 ## 快速使用
 
 ```python

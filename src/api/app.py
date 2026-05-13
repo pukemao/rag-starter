@@ -8,6 +8,7 @@ from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 
+from src.config import settings
 from src.vector_store import DuplicateFileError, VectorStoreService
 
 from .schemas import (
@@ -38,10 +39,10 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
     """Create the FastAPI app.
 
     Passing ``service`` is mainly useful for tests. When omitted, the app uses
-    the default persistent local Chroma database under ``storage/chroma``.
+    the default persistent local Chroma database from ``src.config``.
     """
 
-    app = FastAPI(title="RAG Starter API", version="0.1.0")
+    app = FastAPI(title=settings.api.title, version=settings.api.version)
     vector_service = service or VectorStoreService()
 
     def get_service() -> VectorStoreService:
@@ -80,9 +81,9 @@ def create_app(service: VectorStoreService | None = None) -> FastAPI:
     @app.post("/index", response_model=IndexResponse)
     async def index_knowledge_base(
         files: list[UploadFile] = File(..., description="Knowledge base files to index"),
-        splitter_type: str = Form("recursive"),
-        chunk_size: int = Form(1000),
-        chunk_overlap: int = Form(200),
+        splitter_type: str = Form(settings.splitter.default_type),
+        chunk_size: int = Form(settings.splitter.default_chunk_size),
+        chunk_overlap: int = Form(settings.splitter.default_chunk_overlap),
         active_service: VectorStoreService = Depends(get_service),
     ) -> IndexResponse:
         indexed_files: list[IndexFileResponse] = []

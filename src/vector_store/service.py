@@ -10,6 +10,7 @@ from typing import Any
 from langchain_core.documents import Document
 from langchain_core.embeddings import Embeddings
 
+from src.config import settings
 from src.splitter import load_and_split_documents
 
 from .base import DuplicateFileError, IndexResult, SearchResult, VectorStoreConfig
@@ -79,9 +80,9 @@ class VectorStoreService:
         file_path: str | Path,
         *,
         loader_kwargs: dict[str, Any] | None = None,
-        splitter_type: str = "recursive",
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
+        splitter_type: str = settings.splitter.default_type,
+        chunk_size: int = settings.splitter.default_chunk_size,
+        chunk_overlap: int = settings.splitter.default_chunk_overlap,
         splitter_kwargs: dict[str, Any] | None = None,
         source_label: str | None = None,
         source_id: str | None = None,
@@ -104,9 +105,9 @@ class VectorStoreService:
         file_path: str | Path,
         *,
         loader_kwargs: dict[str, Any] | None = None,
-        splitter_type: str = "recursive",
-        chunk_size: int = 1000,
-        chunk_overlap: int = 200,
+        splitter_type: str = settings.splitter.default_type,
+        chunk_size: int = settings.splitter.default_chunk_size,
+        chunk_overlap: int = settings.splitter.default_chunk_overlap,
         splitter_kwargs: dict[str, Any] | None = None,
         source_label: str | None = None,
         source_id: str | None = None,

@@ -8,6 +8,8 @@ import re
 
 from langchain_core.embeddings import Embeddings
 
+from src.config import settings
+
 _TOKEN_PATTERN = re.compile(r"[\w\u4e00-\u9fff]+", re.UNICODE)
 
 
@@ -19,7 +21,7 @@ class HashEmbeddings(Embeddings):
     company-approved embedding service.
     """
 
-    def __init__(self, dimension: int = 384) -> None:
+    def __init__(self, dimension: int = settings.embedding.dimension) -> None:
         if dimension <= 0:
             raise ValueError("dimension 必须大于 0")
         self.dimension = dimension

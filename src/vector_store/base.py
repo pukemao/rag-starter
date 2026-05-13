@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.config import settings
+
 
 class VectorStoreDependencyError(ImportError):
     """Raised when vector database dependencies are unavailable."""
@@ -24,9 +26,9 @@ class DuplicateFileError(ValueError):
 class VectorStoreConfig:
     """Configuration for the local vector database."""
 
-    persist_directory: str = "storage/chroma"
-    collection_name: str = "documents"
-    embedding_dimension: int = 384
+    persist_directory: str = settings.vector_store.persist_directory
+    collection_name: str = settings.vector_store.collection_name
+    embedding_dimension: int = settings.embedding.dimension
 
 
 @dataclass(frozen=True, slots=True)

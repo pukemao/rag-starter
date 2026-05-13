@@ -6,13 +6,15 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.config import settings
+
 
 class AddDocumentRequest(BaseModel):
     path: str = Field(..., description="Local file path to load, split, and add")
     loader_kwargs: dict[str, Any] = Field(default_factory=dict)
-    splitter_type: str = "recursive"
-    chunk_size: int = Field(default=1000, gt=0)
-    chunk_overlap: int = Field(default=200, ge=0)
+    splitter_type: str = settings.splitter.default_type
+    chunk_size: int = Field(default=settings.splitter.default_chunk_size, gt=0)
+    chunk_overlap: int = Field(default=settings.splitter.default_chunk_overlap, ge=0)
     splitter_kwargs: dict[str, Any] = Field(default_factory=dict)
 
 

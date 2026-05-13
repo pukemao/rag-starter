@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from src.config import settings
+
 
 class SplitterDependencyError(ImportError):
     """Raised when LangChain text splitter dependencies are unavailable."""
@@ -14,9 +16,9 @@ class SplitterDependencyError(ImportError):
 class SplitterConfig:
     """Configuration for creating a LangChain text splitter."""
 
-    splitter_type: str = "recursive"
-    chunk_size: int = 1000
-    chunk_overlap: int = 200
+    splitter_type: str = settings.splitter.default_type
+    chunk_size: int = settings.splitter.default_chunk_size
+    chunk_overlap: int = settings.splitter.default_chunk_overlap
     kwargs: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:

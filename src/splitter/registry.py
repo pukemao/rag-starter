@@ -7,10 +7,11 @@ from pathlib import Path
 from typing import Any
 
 from src.loader import load_documents
+from src.config import settings
 
 from .base import SplitterConfig, SplitterDependencyError
 
-DEFAULT_SPLITTER = "recursive"
+DEFAULT_SPLITTER = settings.splitter.default_type
 
 _SPLITTERS: dict[str, str] = {
     "recursive": "RecursiveCharacterTextSplitter",
@@ -50,8 +51,8 @@ def _import_splitter_class(splitter_type: str) -> type[Any]:
 def create_splitter(
     splitter_type: str = DEFAULT_SPLITTER,
     *,
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
+    chunk_size: int = settings.splitter.default_chunk_size,
+    chunk_overlap: int = settings.splitter.default_chunk_overlap,
     **kwargs: Any,
 ) -> Any:
     """Create a LangChain text splitter by alias."""
@@ -75,8 +76,8 @@ def split_documents(
     *,
     splitter: Any | None = None,
     splitter_type: str = DEFAULT_SPLITTER,
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
+    chunk_size: int = settings.splitter.default_chunk_size,
+    chunk_overlap: int = settings.splitter.default_chunk_overlap,
     **splitter_kwargs: Any,
 ) -> list[Any]:
     """Split LangChain ``Document`` objects into chunks."""
@@ -95,8 +96,8 @@ def load_and_split_documents(
     *,
     splitter: Any | None = None,
     splitter_type: str = DEFAULT_SPLITTER,
-    chunk_size: int = 1000,
-    chunk_overlap: int = 200,
+    chunk_size: int = settings.splitter.default_chunk_size,
+    chunk_overlap: int = settings.splitter.default_chunk_overlap,
     loader_kwargs: dict[str, Any] | None = None,
     splitter_kwargs: dict[str, Any] | None = None,
 ) -> list[Any]:
