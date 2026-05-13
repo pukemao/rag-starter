@@ -99,6 +99,8 @@ from src.splitter import load_and_split_documents
 chunks = load_and_split_documents("docs/report.pdf")
 ```
 
+Markdown 文件在 `load_and_split_documents()` 中会优先按标题层级聚合，再做 recursive 二次切分，避免标题和正文落入不同 chunk。切分后的 metadata 会保留 `h1`、`h2` 等标题层级，提升 RAG 检索上下文完整性。
+
 完整索引链路：
 
 ```python

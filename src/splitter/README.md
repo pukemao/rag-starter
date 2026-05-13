@@ -43,3 +43,16 @@ chunks = load_and_split_documents(
 ```
 
 这样不同文件格式可以复用同一套切块策略，后续调整 `chunk_size`、`chunk_overlap` 或 tokenizer 时，不需要修改各个 loader 模块。
+
+## Markdown 优化
+
+`load_and_split_documents()` 对 `.md`、`.markdown`、`.mdx` 有专门处理：先使用 LangChain `MarkdownHeaderTextSplitter` 按 `#` 到 `######` 标题聚合内容，并保留标题文本，然后再用 `RecursiveCharacterTextSplitter` 控制最大 chunk 大小。
+
+这样可以避免 Markdown loader 的 `elements` 模式把标题和正文拆成不同 chunk，导致 RAG 检索命中正文时缺少标题上下文。最终 chunk 会尽量保持：
+
+```text
+# 标题
+正文段落
+```
+
+metadata 中会保留 `h1`、`h2` 等标题层级，便于后续展示来源或过滤。

@@ -6,6 +6,8 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
+from langchain_core.documents import Document
+
 from src.loader import load_documents
 from src.config import settings
 
@@ -20,6 +22,16 @@ _SPLITTERS: dict[str, str] = {
     "markdown": "MarkdownTextSplitter",
     "python": "PythonCodeTextSplitter",
 }
+
+_MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
+_MARKDOWN_HEADERS = (
+    ("#", "h1"),
+    ("##", "h2"),
+    ("###", "h3"),
+    ("####", "h4"),
+    ("#####", "h5"),
+    ("######", "h6"),
+)
 
 
 def supported_splitters() -> tuple[str, ...]:
@@ -91,6 +103,48 @@ def split_documents(
     return list(active_splitter.split_documents(documents))
 
 
+def split_markdown_file(
+    file_path: str | Path,
+    *,
+    splitter: Any | None = None,
+    chunk_size: int = settings.splitter.default_chunk_size,
+    chunk_overlap: int = settings.splitter.default_chunk_overlap,
+    encoding: str = "utf-8",
+    headers_to_split_on: tuple[tuple[str, str], ...] = _MARKDOWN_HEADERS,
+    **splitter_kwargs: Any,
+) -> list[Any]:
+    """Split Markdown by headers first, then enforce chunk size recursively."""
+
+    path = Path(file_path)
+    text = path.read_text(encoding=encoding)
+    header_splitter_cls = _import_markdown_header_splitter()
+    header_splitter = header_splitter_cls(
+        headers_to_split_on=list(headers_to_split_on),
+        strip_headers=False,
+    )
+    sections = header_splitter.split_text(text)
+    documents = [
+        Document(
+            page_content=section.page_content,
+            metadata={
+                "source": str(path),
+                "filename": path.name,
+                "filetype": "text/markdown",
+                **dict(section.metadata),
+            },
+        )
+        for section in sections
+    ]
+    return split_documents(
+        documents,
+        splitter=splitter,
+        splitter_type="recursive",
+        chunk_size=chunk_size,
+        chunk_overlap=chunk_overlap,
+        **splitter_kwargs,
+    )
+
+
 def load_and_split_documents(
     file_path: str | Path,
     *,
@@ -103,6 +157,15 @@ def load_and_split_documents(
 ) -> list[Any]:
     """Load one file with ``src.loader`` and split the resulting documents."""
 
+    path = Path(file_path)
+    if path.suffix.lower() in _MARKDOWN_EXTENSIONS and splitter is None:
+        return split_markdown_file(
+            path,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            **(splitter_kwargs or {}),
+        )
+
     documents = load_documents(file_path, **(loader_kwargs or {}))
     return split_documents(
         documents,
@@ -112,3 +175,17 @@ def load_and_split_documents(
         chunk_overlap=chunk_overlap,
         **(splitter_kwargs or {}),
     )
+
+
+def _import_markdown_header_splitter() -> type[Any]:
+    try:
+        module = import_module("langchain_text_splitters")
+    except ImportError as exc:
+        raise SplitterDependencyError(
+            "无法导入 langchain_text_splitters。请安装依赖: pip install langchain-text-splitters"
+        ) from exc
+
+    splitter_cls = getattr(module, "MarkdownHeaderTextSplitter", None)
+    if splitter_cls is None:
+        raise SplitterDependencyError("langchain_text_splitters 中未找到 MarkdownHeaderTextSplitter")
+    return splitter_cls

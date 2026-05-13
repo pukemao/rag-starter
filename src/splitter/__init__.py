@@ -5,6 +5,7 @@ from .registry import (
     DEFAULT_SPLITTER,
     create_splitter,
     load_and_split_documents,
+    split_markdown_file,
     split_documents,
     supported_splitters,
 )
@@ -15,6 +16,7 @@ __all__ = [
     "SplitterDependencyError",
     "create_splitter",
     "load_and_split_documents",
+    "split_markdown_file",
     "split_documents",
     "supported_splitters",
 ]
