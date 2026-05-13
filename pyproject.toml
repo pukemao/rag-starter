@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "langchain-community",
     "langchain-core",
+    "langchain-text-splitters",
 ]
 
 [project.optional-dependencies]
