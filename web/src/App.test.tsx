@@ -13,11 +13,20 @@ let mockSettings = {
   chat_background_opacity: 0.2,
   updated_at: now
 };
+let mockSessions: unknown[] = [];
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   if (url.endsWith("/chat/sessions")) {
-    return new Response(JSON.stringify({ sessions: [] }), { status: 200, headers: { "Content-Type": "application/json" } });
+    return new Response(JSON.stringify({ sessions: mockSessions }), { status: 200, headers: { "Content-Type": "application/json" } });
+  }
+  if (url.includes("/chat/sessions/")) {
+    const sessionId = url.split("/chat/sessions/")[1];
+    const session = mockSessions.find((item) => typeof item === "object" && item !== null && "id" in item && item.id === sessionId);
+    return new Response(JSON.stringify(session ?? { id: sessionId, title: "会话", messages: [], created_at: now, updated_at: now }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" }
+    });
   }
   if (url.endsWith("/settings")) {
     if (String(init?.method ?? "GET").toUpperCase() === "PUT") {
@@ -146,6 +155,7 @@ describe("App", () => {
       chat_background_opacity: 0.2,
       updated_at: now
     };
+    mockSessions = [];
     fetchMock.mockClear();
   });
 
@@ -184,6 +194,20 @@ describe("App", () => {
     await screen.findByRole("heading", { name: "回答标题" });
 
     expect(screen.getAllByText("测试 markdown").length).toBeGreaterThan(0);
+  });
+
+  it("sorts chat sessions by updated time descending", async () => {
+    mockSessions = [
+      { id: "old", title: "旧会话", created_at: "2026-05-13T09:00:00Z", updated_at: "2026-05-13T09:00:00Z", messages: [] },
+      { id: "new", title: "新会话", created_at: "2026-05-14T09:00:00Z", updated_at: "2026-05-14T09:00:00Z", messages: [] },
+      { id: "middle", title: "中间会话", created_at: "2026-05-13T18:00:00Z", updated_at: "2026-05-13T18:00:00Z", messages: [] }
+    ];
+
+    renderApp("/chat");
+
+    await screen.findByText("旧会话");
+    const titles = Array.from(document.querySelectorAll("aside button .text-sm.font-medium")).map((element) => element.textContent);
+    expect(titles).toEqual(["新会话", "中间会话", "旧会话"]);
   });
 
   it("renders settings page from shell entry", async () => {

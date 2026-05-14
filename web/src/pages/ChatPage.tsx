@@ -65,6 +65,10 @@ function toChatSession(session: ChatSessionResponse): ChatSession {
   };
 }
 
+function sortSessionsByUpdatedAtDesc(items: ChatSession[]) {
+  return [...items].sort((left, right) => new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime());
+}
+
 function toUserPreferences(settings: UserSettingsResponse) {
   return {
     showRagReferences: settings.show_rag_references,
@@ -95,12 +99,14 @@ export function ChatPage() {
   const filteredSessions = useMemo(() => {
     const keyword = conversationSearch.trim().toLowerCase();
     if (!keyword) {
-      return sessions;
+      return sortSessionsByUpdatedAtDesc(sessions);
     }
-    return sessions.filter((session) => {
-      const haystack = [session.title, ...session.messages.map((message) => message.content)].join(" ").toLowerCase();
-      return haystack.includes(keyword);
-    });
+    return sortSessionsByUpdatedAtDesc(
+      sessions.filter((session) => {
+        const haystack = [session.title, ...session.messages.map((message) => message.content)].join(" ").toLowerCase();
+        return haystack.includes(keyword);
+      })
+    );
   }, [sessions, conversationSearch]);
 
   const sessionsQuery = useQuery({
@@ -150,11 +156,13 @@ export function ChatPage() {
   useEffect(() => {
     if (sessionsQuery.data) {
       setSessions((current) =>
-        sessionsQuery.data.sessions.map((session) => {
-          const next = toChatSession(session);
-          const existing = current.find((item) => item.id === next.id);
-          return existing?.messages.length ? { ...next, messages: existing.messages } : next;
-        })
+        sortSessionsByUpdatedAtDesc(
+          sessionsQuery.data.sessions.map((session) => {
+            const next = toChatSession(session);
+            const existing = current.find((item) => item.id === next.id);
+            return existing?.messages.length ? { ...next, messages: existing.messages } : next;
+          })
+        )
       );
     }
   }, [sessionsQuery.data]);
@@ -285,7 +293,7 @@ export function ChatPage() {
     setSessions((current) => {
       const exists = current.some((item) => item.id === nextSession.id);
       const withoutCurrent = current.filter((item) => item.id !== nextSession.id);
-      return exists ? [nextSession, ...withoutCurrent] : [nextSession, ...current];
+      return sortSessionsByUpdatedAtDesc(exists ? [nextSession, ...withoutCurrent] : [nextSession, ...current]);
     });
   }
 
