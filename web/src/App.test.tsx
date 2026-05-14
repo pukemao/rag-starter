@@ -85,6 +85,24 @@ describe("App", () => {
     expect(screen.getByText("print('ok')")).toBeInTheDocument();
   });
 
+  it("does not persist session when creating a new chat only", async () => {
+    renderApp("/chat");
+    await userEvent.click(screen.getByRole("button", { name: "新增会话" }));
+
+    expect(localStorage.getItem("rag-starter.chat.sessions")).toBe("[]");
+  });
+
+  it("persists session after a successful completed chat", async () => {
+    renderApp("/chat");
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "测试保存");
+    await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await screen.findByRole("heading", { name: "回答标题" });
+
+    const sessions = JSON.parse(localStorage.getItem("rag-starter.chat.sessions") ?? "[]") as Array<{ messages: unknown[] }>;
+    expect(sessions).toHaveLength(1);
+    expect(sessions[0].messages).toHaveLength(2);
+  });
+
   it("renders settings page from shell entry", async () => {
     renderApp("/knowledge");
     await userEvent.click(screen.getAllByRole("link", { name: "设置" })[0]);

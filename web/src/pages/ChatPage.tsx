@@ -40,6 +40,17 @@ type MarkdownBlock =
 
 const STORAGE_KEY = "rag-starter.chat.sessions";
 
+function createDraftSession(): ChatSession {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    title: "新会话",
+    messages: [],
+    createdAt: now,
+    updatedAt: now
+  };
+}
+
 export function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions());
   const [activeSessionId, setActiveSessionId] = useState(() => sessions[0]?.id ?? "");
@@ -47,14 +58,19 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<ChatMode>("normal");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [draftSession, setDraftSession] = useState<ChatSession | null>(null);
+  const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([]);
+  const [transientError, setTransientError] = useState("");
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
-  const activeSession = useMemo(
+  const storedActiveSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
     [sessions, activeSessionId]
   );
+  const activeSession = draftSession ?? storedActiveSession;
+  const visibleMessages = [...(activeSession?.messages ?? []), ...pendingMessages];
   const filteredSessions = useMemo(() => {
     const keyword = conversationSearch.trim().toLowerCase();
     if (!keyword) {
@@ -67,7 +83,17 @@ export function ChatPage() {
   }, [sessions, conversationSearch]);
 
   const chatMutation = useMutation({
-    mutationFn: async ({ message, history, activeMode }: { message: string; history: ChatHistoryMessage[]; activeMode: ChatMode }) => {
+    mutationFn: async ({
+      message,
+      history,
+      activeMode
+    }: {
+      message: string;
+      history: ChatHistoryMessage[];
+      activeMode: ChatMode;
+      session: ChatSession;
+      userMessage: ChatMessage;
+    }) => {
       if (activeMode === "rag") {
         return {
           activeMode,
@@ -86,11 +112,12 @@ export function ChatPage() {
         })
       };
     },
-    onSuccess: ({ response, activeMode }) => {
-      appendAssistantMessage(response.answer, activeMode, "references" in response ? response.references : undefined);
+    onSuccess: ({ response, activeMode }, variables) => {
+      completeAssistantMessage(variables.session, variables.userMessage, response.answer, activeMode, "references" in response ? response.references : undefined);
     },
     onError: (error) => {
-      appendAssistantMessage(error instanceof Error ? error.message : "请求失败，请稍后重试。", mode);
+      setPendingMessages([]);
+      setTransientError(error instanceof Error ? error.message : "请求失败，请稍后重试。");
     }
   });
 
@@ -108,7 +135,7 @@ export function ChatPage() {
     if (typeof messageEndRef.current?.scrollIntoView === "function") {
       messageEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [activeSession?.messages.length, chatMutation.isPending]);
+  }, [visibleMessages.length, transientError, chatMutation.isPending]);
 
   useEffect(() => {
     resizeInput();
@@ -128,16 +155,10 @@ export function ChatPage() {
   }, []);
 
   function createSession() {
-    const now = new Date().toISOString();
-    const session: ChatSession = {
-      id: crypto.randomUUID(),
-      title: "新会话",
-      messages: [],
-      createdAt: now,
-      updatedAt: now
-    };
-    setSessions((current) => [session, ...current]);
-    setActiveSessionId(session.id);
+    setDraftSession(createDraftSession());
+    setActiveSessionId("");
+    setPendingMessages([]);
+    setTransientError("");
     setInput("");
   }
 
@@ -153,6 +174,13 @@ export function ChatPage() {
       }
       return next;
     });
+  }
+
+  function activateSession(sessionId: string) {
+    setActiveSessionId(sessionId);
+    setDraftSession(null);
+    setPendingMessages([]);
+    setTransientError("");
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -171,9 +199,11 @@ export function ChatPage() {
       mode,
       createdAt: new Date().toISOString()
     };
-    upsertSessionWithMessage(session, userMessage);
+    setDraftSession(session);
+    setPendingMessages([userMessage]);
+    setTransientError("");
     setInput("");
-    chatMutation.mutate({ message, history, activeMode: mode });
+    chatMutation.mutate({ message, history, activeMode: mode, session, userMessage });
   }
 
   function onInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -194,8 +224,7 @@ export function ChatPage() {
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
-  function appendAssistantMessage(content: string, activeMode: ChatMode, references?: RagReference[]) {
-    const session = activeSession ?? createEmptySession();
+  function completeAssistantMessage(session: ChatSession, userMessage: ChatMessage, content: string, activeMode: ChatMode, references?: RagReference[]) {
     const assistantMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "assistant",
@@ -204,21 +233,25 @@ export function ChatPage() {
       references,
       createdAt: new Date().toISOString()
     };
-    upsertSessionWithMessage(session, assistantMessage);
+    saveCompletedTurn(session, userMessage, assistantMessage);
   }
 
-  function upsertSessionWithMessage(session: ChatSession, message: ChatMessage) {
+  function saveCompletedTurn(session: ChatSession, userMessage: ChatMessage, assistantMessage: ChatMessage) {
     const now = new Date().toISOString();
+    const messages = [...session.messages, userMessage, assistantMessage];
     setSessions((current) => {
       const exists = current.some((item) => item.id === session.id);
       const nextSession: ChatSession = {
         ...session,
-        title: session.title === "新会话" && message.role === "user" ? titleFromMessage(message.content) : session.title,
-        messages: [...session.messages, message],
+        title: session.title === "新会话" ? titleFromMessage(userMessage.content) : session.title,
+        messages,
         updatedAt: now
       };
+      setActiveSessionId(nextSession.id);
+      setDraftSession(null);
+      setPendingMessages([]);
+      setTransientError("");
       if (!exists) {
-        setActiveSessionId(nextSession.id);
         return [nextSession, ...current];
       }
       return [nextSession, ...current.filter((item) => item.id !== session.id)];
@@ -226,15 +259,9 @@ export function ChatPage() {
   }
 
   function createEmptySession() {
-    const now = new Date().toISOString();
-    const session: ChatSession = {
-      id: crypto.randomUUID(),
-      title: "新会话",
-      messages: [],
-      createdAt: now,
-      updatedAt: now
-    };
-    setActiveSessionId(session.id);
+    const session = createDraftSession();
+    setDraftSession(session);
+    setActiveSessionId("");
     return session;
   }
 
@@ -271,7 +298,7 @@ export function ChatPage() {
                   activeSession?.id === session.id ? "bg-primary/10" : "hover:bg-background"
                 )}
               >
-                <button className="min-h-11 min-w-0 flex-1 text-left" type="button" onClick={() => setActiveSessionId(session.id)}>
+                <button className="min-h-11 min-w-0 flex-1 text-left" type="button" onClick={() => activateSession(session.id)}>
                   <span className="block truncate text-sm font-medium">{session.title}</span>
                   <span className="mt-1 block truncate text-xs text-muted-foreground">{session.messages.at(-1)?.content || "暂无消息"}</span>
                 </button>
@@ -318,8 +345,8 @@ export function ChatPage() {
           ) : null}
           <div className="relative z-10 h-full overflow-y-auto px-4 pb-36 pt-5 app-scrollbar">
             <div className="mx-auto max-w-3xl space-y-5">
-              {activeSession?.messages.length ? (
-                activeSession.messages.map((message) => <MessageBubble key={message.id} message={message} showRagReferences={preferences.showRagReferences} />)
+              {visibleMessages.length ? (
+                visibleMessages.map((message) => <MessageBubble key={message.id} message={message} showRagReferences={preferences.showRagReferences} />)
               ) : (
                 <div className="flex min-h-[42dvh] flex-col items-center justify-center text-center">
                   <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary">
@@ -337,13 +364,14 @@ export function ChatPage() {
                   正在生成回答
                 </div>
               ) : null}
+              {transientError ? <p className="rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">{transientError}</p> : null}
               <div ref={messageEndRef} />
             </div>
           </div>
         </div>
 
         <form className="relative z-20 bg-gradient-to-t from-surface via-surface/95 to-surface/0 px-4 pb-5 pt-3" onSubmit={onSubmit}>
-          <div className="mx-auto flex max-w-4xl items-end gap-3 rounded-[2rem] border bg-surface/95 px-4 py-3 shadow-[0_18px_45px_hsl(var(--foreground)/0.16)] backdrop-blur">
+          <div className="mx-auto flex max-w-4xl items-center gap-3 rounded-[2rem] border bg-surface/95 px-4 py-3 shadow-[0_18px_45px_hsl(var(--foreground)/0.16)] backdrop-blur">
             <Button type="button" variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full" aria-label="添加内容">
               <Plus className="h-5 w-5" aria-hidden="true" />
             </Button>
@@ -362,7 +390,7 @@ export function ChatPage() {
                 }
               }}
             />
-            <div className="flex shrink-0 items-center gap-2 pb-0.5">
+            <div className="flex shrink-0 items-center gap-2">
               <label className="relative inline-flex h-10 items-center">
                 <span className="sr-only">选择对话模式</span>
                 <select
