@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import unittest
+from unittest.mock import patch
 
 from src.vector_store import KnowledgeFile
 from src.rag import RagAnswer, RagReference
@@ -56,12 +57,13 @@ class FakeRagService:
     def __init__(self) -> None:
         self.answer_requests = []
 
-    def answer(self, question, *, k=4, filter=None, system_prompt=None, temperature=None, max_tokens=None):
+    def answer(self, question, *, k=4, filter=None, history=None, system_prompt=None, temperature=None, max_tokens=None):
         self.answer_requests.append(
             {
                 "question": question,
                 "k": k,
                 "filter": filter,
+                "history": history,
                 "system_prompt": system_prompt,
                 "temperature": temperature,
                 "max_tokens": max_tokens,
@@ -204,10 +206,47 @@ class ApiTests(unittest.TestCase):
             {"results": [{"page_content": "hello", "metadata": {"source": "a.txt"}, "score": 0.5}]},
         )
 
+    def test_chat(self):
+        from src.llm import LLMResponse
+
+        class FakeDeepSeekClient:
+            def chat(self, prompt, *, system_prompt=None, temperature=None, max_tokens=None):
+                self.prompt = prompt
+                self.system_prompt = system_prompt
+                self.temperature = temperature
+                self.max_tokens = max_tokens
+                return LLMResponse(content="chat answer", model="deepseek-test", usage={"total_tokens": 6})
+
+        fake_client = FakeDeepSeekClient()
+        with patch("src.api.app.DeepSeekClient", return_value=fake_client):
+            response = self.client.post(
+                "/chat",
+                json={
+                    "message": "继续说明",
+                    "history": [{"role": "user", "content": "前面的问题"}],
+                    "temperature": 0.1,
+                    "max_tokens": 128,
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["answer"], "chat answer")
+        self.assertIn("前面的问题", response.json()["prompt"])
+        self.assertIn("继续说明", response.json()["prompt"])
+        self.assertEqual(fake_client.temperature, 0.1)
+        self.assertEqual(fake_client.max_tokens, 128)
+
     def test_rag_chat(self):
         response = self.client.post(
             "/rag/chat",
-            json={"question": "hello?", "k": 1, "filter": {"source": "a.txt"}, "temperature": 0.1, "max_tokens": 128},
+            json={
+                "question": "hello?",
+                "k": 1,
+                "filter": {"source": "a.txt"},
+                "history": [{"role": "user", "content": "上一个问题"}],
+                "temperature": 0.1,
+                "max_tokens": 128,
+            },
         )
 
         self.assertEqual(response.status_code, 200)
@@ -228,6 +267,7 @@ class ApiTests(unittest.TestCase):
                 "question": "hello?",
                 "k": 1,
                 "filter": {"source": "a.txt"},
+                "history": [{"role": "user", "content": "上一个问题"}],
                 "system_prompt": None,
                 "temperature": 0.1,
                 "max_tokens": 128,

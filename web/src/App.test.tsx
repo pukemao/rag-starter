@@ -41,8 +41,9 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "知识库" })).toBeInTheDocument();
   });
 
-  it("renders rag chat route", () => {
+  it("renders user chat route", () => {
     renderApp("/chat");
-    expect(screen.getByRole("heading", { name: "RAG 增强对话" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "新会话" })).toBeInTheDocument();
+    expect(screen.getByText("开始一次知识库对话")).toBeInTheDocument();
   });
 });

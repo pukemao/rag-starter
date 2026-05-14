@@ -160,6 +160,7 @@ uvicorn src.api.main:app --reload
 - `POST /documents`: 加载、分割并写入本地向量库
 - `DELETE /documents`: 按 `ids`、`source_id` 或 `source` 删除向量库记录
 - `POST /search`: 相似度检索
+- `POST /chat`: 普通大模型对话，支持传入历史上下文
 - `POST /rag/chat`: RAG 增强对话，基于本地知识库检索结果调用 DeepSeek
 
 `POST /index` 会返回每个文件的 `filename`、`source_id`、`ids`、写入 chunk 数量、输入 chunk 数量和跳过的重复 chunk 数量，方便后续追踪、删除和观察去重效果。若上传重复文件，会返回类似：
@@ -196,9 +197,13 @@ curl -X POST http://127.0.0.1:8000/search \
 
 export DEEPSEEK_API_KEY="sk-..."
 
+curl -X POST http://127.0.0.1:8000/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"你好","history":[]}'
+
 curl -X POST http://127.0.0.1:8000/rag/chat \
   -H "Content-Type: application/json" \
-  -d '{"question":"项目背景是什么？","k":3}'
+  -d '{"question":"项目背景是什么？","k":3,"history":[]}'
 ```
 
 `POST /rag/chat` 响应包含 `answer`、`question`、实际发送给 LLM 的 `prompt`、`references`、`model` 和 `usage`。如果没有配置 `DEEPSEEK_API_KEY`，接口会返回 `500` 并提示设置环境变量。
@@ -230,10 +235,11 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 当前页面包含：
 
 - 知识库：用户端知识库管理页，主页面展示文件列表；上传文件和查询知识库通过按钮弹出表单完成；上传支持拖拽和点击选择，可批量上传；查询结果在查询弹窗内展示；按文件操作优先使用 `source_id`
+- 对话：用户端模型对话页，支持新增会话、搜索会话、本地存储会话、删除会话、上下文记忆；输入框可切换 `LLM` 与 `RAG` 模式
 - 状态：检查 FastAPI `/health`
 - 索引：上传文件并调用 `POST /index`
 - 检索：调用 `POST /search`
-- RAG 对话：调用 `POST /rag/chat`
+- RAG 调试：调用 `POST /rag/chat`
 - 删除：调用 `DELETE /documents`
 
 ## 支持格式

@@ -68,6 +68,7 @@ class RagService:
         *,
         k: int = settings.rag.default_top_k,
         filter: dict[str, Any] | None = None,
+        history: list[dict[str, str]] | None = None,
         system_prompt: str | None = None,
         temperature: float | None = None,
         max_tokens: int | None = None,
@@ -82,7 +83,7 @@ class RagService:
 
         search_results = self.vector_service.search(normalized_question, k=k, filter=filter)
         references = self._to_references(search_results)
-        prompt = self.build_prompt(normalized_question, references)
+        prompt = self.build_prompt(normalized_question, references, history=history)
         llm_response = self.llm_client.chat(
             prompt,
             system_prompt=system_prompt or self.system_prompt,
@@ -99,24 +100,45 @@ class RagService:
         )
 
     @staticmethod
-    def build_prompt(question: str, references: list[RagReference]) -> str:
+    def build_prompt(
+        question: str,
+        references: list[RagReference],
+        *,
+        history: list[dict[str, str]] | None = None,
+    ) -> str:
         """Build the final user prompt from the original question and references."""
 
         if references:
             context = "\n\n".join(RagService._format_reference(reference) for reference in references)
         else:
             context = "未检索到与问题相关的知识库段落。"
+        conversation = RagService._format_history(history or [])
 
         return (
             "请结合用户问题和参考段落生成自然、完整的回答。\n"
             "如果参考段落无法支持答案，请明确说明无法从知识库中确认，不要编造事实。\n\n"
+            f"历史对话：\n{conversation}\n\n"
             f"用户问题：\n{question}\n\n"
             f"参考段落：\n{context}\n\n"
             "回答要求：\n"
             "1. 优先根据参考段落中的信息回答。\n"
-            "2. 将参考段落与用户问题整合成正常回答，不要机械罗列检索片段。\n"
-            "3. 回答应简洁、准确、符合用户提问语境。"
+            "2. 结合必要的历史对话理解上下文，但不要让历史对话覆盖知识库事实。\n"
+            "3. 将参考段落与用户问题整合成正常回答，不要机械罗列检索片段。\n"
+            "4. 回答应简洁、准确、符合用户提问语境。"
         )
+
+    @staticmethod
+    def _format_history(history: list[dict[str, str]]) -> str:
+        if not history:
+            return "无"
+
+        lines = []
+        for item in history[-12:]:
+            role = "用户" if item.get("role") == "user" else "助手"
+            content = str(item.get("content") or "").strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        return "\n".join(lines) if lines else "无"
 
     @staticmethod
     def _to_references(search_results: list[SearchResult]) -> list[RagReference]:

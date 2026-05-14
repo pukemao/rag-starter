@@ -1,5 +1,7 @@
 import type {
   ApiErrorPayload,
+  ChatHistoryMessage,
+  ChatResponse,
   DeleteDocumentResponse,
   HealthResponse,
   IndexResponse,
@@ -90,10 +92,23 @@ export function searchKnowledgeBase(input: { query: string; k: number; filter?: 
   });
 }
 
+export function chatWithModel(input: {
+  message: string;
+  history?: ChatHistoryMessage[];
+  temperature?: number | null;
+  max_tokens?: number | null;
+}) {
+  return requestJson<ChatResponse>("/chat", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
 export function chatWithRag(input: {
   question: string;
   k: number;
   filter?: Record<string, unknown> | null;
+  history?: ChatHistoryMessage[];
   temperature?: number | null;
   max_tokens?: number | null;
 }) {

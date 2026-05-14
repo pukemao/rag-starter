@@ -10,7 +10,8 @@ const navigation = [
   { to: "/status", label: "状态", icon: Activity },
   { to: "/index", label: "索引", icon: FileUp },
   { to: "/search", label: "检索", icon: Search },
-  { to: "/chat", label: "RAG 对话", icon: MessageSquareText },
+  { to: "/chat", label: "对话", icon: MessageSquareText },
+  { to: "/rag-chat", label: "RAG 调试", icon: MessageSquareText },
   { to: "/delete", label: "删除", icon: Trash2 }
 ];
 

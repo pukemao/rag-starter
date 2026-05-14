@@ -83,10 +83,31 @@ class SearchResponse(BaseModel):
     results: list[SearchResultResponse]
 
 
+class ChatMessageRequest(BaseModel):
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., min_length=1)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(..., min_length=1)
+    history: list[ChatMessageRequest] = Field(default_factory=list)
+    system_prompt: str | None = None
+    temperature: float | None = None
+    max_tokens: int | None = Field(default=None, gt=0)
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    prompt: str
+    model: str
+    usage: dict[str, Any] = Field(default_factory=dict)
+
+
 class RagChatRequest(BaseModel):
     question: str = Field(..., min_length=1)
     k: int = Field(default=settings.rag.default_top_k, gt=0)
     filter: dict[str, Any] | None = None
+    history: list[ChatMessageRequest] = Field(default_factory=list)
     system_prompt: str | None = None
     temperature: float | None = None
     max_tokens: int | None = Field(default=None, gt=0)

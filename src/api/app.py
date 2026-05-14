@@ -10,13 +10,15 @@ from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.config import settings
-from src.llm import LLMConfigurationError
+from src.llm import DeepSeekClient, LLMConfigurationError
 from src.rag import RagService
 from src.vector_store import DuplicateFileError, VectorStoreService
 
 from .schemas import (
     AddDocumentRequest,
     AddDocumentResponse,
+    ChatRequest,
+    ChatResponse,
     DeleteDocumentRequest,
     DeleteDocumentResponse,
     IndexFileResponse,
@@ -40,6 +42,21 @@ def _duplicate_file_response(exc: DuplicateFileError) -> HTTPException:
             "filename": exc.filename,
             "file_hash": exc.file_hash,
         },
+    )
+
+
+def _build_chat_prompt(message: str, history: list[dict[str, str]]) -> str:
+    history_lines = []
+    for item in history[-12:]:
+        role = "用户" if item.get("role") == "user" else "助手"
+        content = str(item.get("content") or "").strip()
+        if content:
+            history_lines.append(f"{role}: {content}")
+    conversation = "\n".join(history_lines) if history_lines else "无"
+    return (
+        "请根据用户当前输入和历史对话进行自然、准确的回答。\n\n"
+        f"历史对话：\n{conversation}\n\n"
+        f"用户当前输入：\n{message.strip()}"
     )
 
 
@@ -227,6 +244,25 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
             ]
         )
 
+    @app.post("/chat", response_model=ChatResponse)
+    def chat(request: ChatRequest) -> ChatResponse:
+        try:
+            prompt = _build_chat_prompt(
+                request.message,
+                [{"role": item.role, "content": item.content} for item in request.history],
+            )
+            result = DeepSeekClient().chat(
+                prompt,
+                system_prompt=request.system_prompt or "你是一个严谨、清晰的中文对话助手。",
+                temperature=request.temperature,
+                max_tokens=request.max_tokens,
+            )
+        except LLMConfigurationError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return ChatResponse(answer=result.content, prompt=prompt, model=result.model, usage=result.usage)
+
     @app.post("/rag/chat", response_model=RagChatResponse)
     def rag_chat(
         request: RagChatRequest,
@@ -237,6 +273,7 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
                 request.question,
                 k=request.k,
                 filter=request.filter,
+                history=[{"role": item.role, "content": item.content} for item in request.history],
                 system_prompt=request.system_prompt,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,

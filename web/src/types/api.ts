@@ -29,6 +29,18 @@ export type SearchResponse = {
   results: SearchResult[];
 };
 
+export type ChatHistoryMessage = {
+  role: "user" | "assistant";
+  content: string;
+};
+
+export type ChatResponse = {
+  answer: string;
+  prompt: string;
+  model: string;
+  usage: Record<string, unknown>;
+};
+
 export type RagReference = SearchResult & {
   index: number;
 };

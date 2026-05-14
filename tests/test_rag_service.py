@@ -43,7 +43,14 @@ class RagServiceTests(unittest.TestCase):
         llm_client = FakeLlmClient()
         service = RagService(vector_service=vector_service, llm_client=llm_client, system_prompt="系统提示词")
 
-        result = service.answer(" 原始问题是什么？ ", k=2, filter={"source": "a.md"}, temperature=0.1, max_tokens=256)
+        result = service.answer(
+            " 原始问题是什么？ ",
+            k=2,
+            filter={"source": "a.md"},
+            history=[{"role": "user", "content": "前一个问题"}, {"role": "assistant", "content": "前一个回答"}],
+            temperature=0.1,
+            max_tokens=256,
+        )
 
         self.assertEqual(result.answer, "模型回答")
         self.assertEqual(result.question, "原始问题是什么？")
@@ -52,6 +59,8 @@ class RagServiceTests(unittest.TestCase):
         self.assertEqual(len(result.references), 2)
         self.assertIn("原始问题是什么？", result.prompt)
         self.assertIn("第一段知识库内容", result.prompt)
+        self.assertIn("前一个问题", result.prompt)
+        self.assertIn("前一个回答", result.prompt)
         self.assertIn("[1] source=a.md，score=0.12", result.prompt)
         self.assertIn("将参考段落与用户问题整合成正常回答", result.prompt)
         self.assertNotIn("参考段落编号", result.prompt)
