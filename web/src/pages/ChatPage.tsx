@@ -1,5 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
-import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen, Plus, ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -316,7 +316,7 @@ export function ChatPage() {
               style={{ opacity: preferences.chatBackgroundOpacity }}
             />
           ) : null}
-          <div className="relative z-10 h-full overflow-y-auto px-4 py-5 app-scrollbar">
+          <div className="relative z-10 h-full overflow-y-auto px-4 pb-36 pt-5 app-scrollbar">
             <div className="mx-auto max-w-3xl space-y-5">
               {activeSession?.messages.length ? (
                 activeSession.messages.map((message) => <MessageBubble key={message.id} message={message} showRagReferences={preferences.showRagReferences} />)
@@ -342,15 +342,19 @@ export function ChatPage() {
           </div>
         </div>
 
-        <form className="border-t bg-surface p-3" onSubmit={onSubmit}>
-          <div className="mx-auto max-w-3xl rounded-lg border bg-background p-2 shadow-sm">
+        <form className="relative z-20 bg-gradient-to-t from-surface via-surface/95 to-surface/0 px-4 pb-5 pt-3" onSubmit={onSubmit}>
+          <div className="mx-auto flex max-w-4xl items-end gap-3 rounded-[2rem] border bg-surface/95 px-4 py-3 shadow-[0_18px_45px_hsl(var(--foreground)/0.16)] backdrop-blur">
+            <Button type="button" variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full" aria-label="添加内容">
+              <Plus className="h-5 w-5" aria-hidden="true" />
+            </Button>
             <Textarea
               ref={inputRef}
               rows={1}
-              className="max-h-36 min-h-6 resize-none border-0 bg-transparent px-2 py-1.5 leading-6 shadow-none focus-visible:ring-0 app-scrollbar"
+              aria-label="输入消息"
+              className="max-h-36 min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-base leading-6 shadow-none focus-visible:ring-0 app-scrollbar"
               value={input}
               onChange={onInputChange}
-              placeholder={mode === "rag" ? "向知识库提问..." : "输入消息..."}
+              placeholder={mode === "rag" ? "向知识库提问..." : "有问题，尽管问"}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -358,25 +362,22 @@ export function ChatPage() {
                 }
               }}
             />
-            <div className="mt-2 flex items-center justify-between gap-3">
-              <div className="inline-flex rounded-md border bg-surface p-1">
-                <button
-                  type="button"
-                  className={cn("rounded px-3 py-1.5 text-sm font-medium", mode === "normal" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}
-                  onClick={() => setMode("normal")}
+            <div className="flex shrink-0 items-center gap-2 pb-0.5">
+              <label className="relative inline-flex h-10 items-center">
+                <span className="sr-only">选择对话模式</span>
+                <select
+                  className="h-10 appearance-none rounded-full border-0 bg-transparent pl-3 pr-8 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
+                  value={mode}
+                  onChange={(event) => setMode(event.target.value as ChatMode)}
+                  aria-label="选择对话模式"
                 >
-                  LLM
-                </button>
-                <button
-                  type="button"
-                  className={cn("rounded px-3 py-1.5 text-sm font-medium", mode === "rag" ? "bg-primary text-primary-foreground" : "text-muted-foreground")}
-                  onClick={() => setMode("rag")}
-                >
-                  RAG
-                </button>
-              </div>
-              <Button type="submit" size="icon" disabled={!input.trim() || chatMutation.isPending} aria-label="发送消息">
-                {chatMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> : <Send className="h-4 w-4" aria-hidden="true" />}
+                  <option value="normal">LLM</option>
+                  <option value="rag">RAG</option>
+                </select>
+                <ChevronDown className="pointer-events-none absolute right-2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+              </label>
+              <Button type="submit" size="icon" className="h-12 w-12 rounded-full" disabled={!input.trim() || chatMutation.isPending} aria-label="发送消息">
+                {chatMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <Send className="h-5 w-5" aria-hidden="true" />}
               </Button>
             </div>
           </div>

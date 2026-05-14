@@ -77,7 +77,7 @@ describe("App", () => {
 
   it("renders markdown answer in chat route", async () => {
     renderApp("/chat");
-    await userEvent.type(screen.getByPlaceholderText("输入消息..."), "测试 markdown");
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "测试 markdown");
     await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     expect(await screen.findByRole("heading", { name: "回答标题" })).toBeInTheDocument();
@@ -99,8 +99,8 @@ describe("App", () => {
     localStorage.setItem("rag-starter.user.preferences", JSON.stringify({ showRagReferences: false, chatBackgroundImage: "", chatBackgroundOpacity: 0.2 }));
 
     renderApp("/chat");
-    await userEvent.click(screen.getByRole("button", { name: "RAG" }));
-    await userEvent.type(screen.getByPlaceholderText("向知识库提问..."), "测试 RAG");
+    await userEvent.selectOptions(screen.getByLabelText("选择对话模式"), "rag");
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "测试 RAG");
     await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
 
     expect(await screen.findAllByText("RAG 回答")).toHaveLength(2);
