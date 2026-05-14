@@ -97,7 +97,6 @@ class LlmSettings:
     api_key: str = getenv("DEEPSEEK_API_KEY", "")
     base_url: str = getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com")
     model: str = getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
-    thinking_type: str = getenv("DEEPSEEK_THINKING_TYPE", "disabled")
     temperature: float = _get_float("DEEPSEEK_TEMPERATURE", 0.2)
     max_tokens: int = _get_int("DEEPSEEK_MAX_TOKENS", 1024)
     timeout_seconds: float = _get_float("DEEPSEEK_TIMEOUT_SECONDS", 60.0)

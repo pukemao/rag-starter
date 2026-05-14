@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from langchain_core.messages import AIMessage, HumanMessage
 
+from src.agent.deepseek_executor import DeepSeekToolCallingAgentExecutor
 from src.agent.tools import AgentToolContext, create_agent_tools
 from src.config import settings
 from src.llm import DeepSeekClient, LLMConfigurationError
@@ -88,12 +89,19 @@ class AgentChatService:
         )
 
     def _create_agent_executor(self, *, tool_context: AgentToolContext, k: int) -> AgentExecutor:
+        tools = create_agent_tools(vector_service=self.vector_service, context=tool_context, default_k=k)
+        if settings.llm.provider.lower() == "deepseek":
+            return DeepSeekToolCallingAgentExecutor(
+                llm_client=self.llm_client,
+                tools=tools,
+                system_prompt=self.system_prompt,
+            )
+
         try:
             from langchain.agents import create_agent
         except ImportError as exc:
             raise LLMConfigurationError("无法导入 langchain.agents。请安装依赖: pip install langchain") from exc
 
-        tools = create_agent_tools(vector_service=self.vector_service, context=tool_context, default_k=k)
         return create_agent(model=self.llm_client.chat_model, tools=tools, system_prompt=self.system_prompt)
 
     def _build_messages(self, question: str, history: list[dict[str, str]]) -> list[Any]:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import unittest
-from unittest.mock import patch
 
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 
@@ -49,18 +48,6 @@ class DeepSeekClientTests(unittest.TestCase):
     def test_chat_requires_api_key(self):
         with self.assertRaisesRegex(LLMConfigurationError, "DEEPSEEK_API_KEY"):
             DeepSeekClient(api_key="")
-
-    def test_create_chat_model_disables_deepseek_thinking_by_default(self):
-        created_kwargs = {}
-
-        class FakeChatOpenAI:
-            def __init__(self, **kwargs):
-                created_kwargs.update(kwargs)
-
-        with patch.dict("sys.modules", {"langchain_openai": type("Module", (), {"ChatOpenAI": FakeChatOpenAI})}):
-            DeepSeekClient(api_key="sk-test")
-
-        self.assertEqual(created_kwargs["extra_body"], {"thinking": {"type": "disabled"}})
 
 
 if __name__ == "__main__":
