@@ -111,7 +111,9 @@ export function ChatPage() {
 
   const settingsQuery = useQuery({
     queryKey: ["user-settings"],
-    queryFn: getUserSettings
+    queryFn: getUserSettings,
+    refetchOnMount: "always",
+    refetchOnWindowFocus: true
   });
 
   const chatMutation = useMutation({

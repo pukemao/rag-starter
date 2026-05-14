@@ -1,7 +1,7 @@
 import { ArrowLeft, ImagePlus, Palette, Settings, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -20,13 +20,17 @@ export function SettingsPage() {
   const [activeItem, setActiveItem] = useState<SettingsItemId>("config");
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const queryClient = useQueryClient();
 
   const settingsQuery = useQuery({
     queryKey: ["user-settings"],
     queryFn: getUserSettings
   });
   const settingsMutation = useMutation({
-    mutationFn: updateUserSettings
+    mutationFn: updateUserSettings,
+    onSuccess: (data) => {
+      queryClient.setQueryData(["user-settings"], data);
+    }
   });
 
   useEffect(() => {

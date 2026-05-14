@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
@@ -204,5 +204,21 @@ describe("App", () => {
 
     expect(await screen.findAllByText("RAG 回答")).toHaveLength(2);
     expect(screen.queryByText("参考段落 1")).not.toBeInTheDocument();
+  });
+
+  it("applies updated settings after returning to chat without reload", async () => {
+    mockSettings.show_rag_references = false;
+    renderApp("/settings");
+
+    const switchButton = await screen.findByRole("switch", { name: "切换 RAG 参考段落显示" });
+    await waitFor(() => expect(switchButton).toHaveAttribute("aria-checked", "false"));
+    await userEvent.click(switchButton);
+    expect(await screen.findByRole("switch", { name: "切换 RAG 参考段落显示" })).toHaveAttribute("aria-checked", "true");
+
+    await userEvent.click(screen.getByRole("link", { name: "返回" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "测试 RAG");
+    await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(await screen.findByText("参考段落 1")).toBeInTheDocument();
   });
 });
