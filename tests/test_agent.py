@@ -8,6 +8,7 @@ from src.agent.tools import (
     QUERY_WEATHER_DESCRIPTION,
     SEARCH_KNOWLEDGE_BASE_DESCRIPTION,
     GENERATE_DOCUMENT_DESCRIPTION,
+    READ_UPLOADED_DOCUMENT_DESCRIPTION,
     AgentToolContext,
     create_agent_tools,
 )
@@ -61,6 +62,15 @@ class FakeDocumentGenerator:
         )
 
 
+class FakeChatFileService:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def read(self, *, file_ids, file_id=None, query=None, max_chars=None):
+        self.requests.append({"file_ids": file_ids, "file_id": file_id, "query": query, "max_chars": max_chars})
+        return "文件：demo.md\n\n[片段 1]\n上传文件内容"
+
+
 class AgentToolTests(unittest.TestCase):
     def test_search_knowledge_base_tool_uses_explicit_description(self):
         context = AgentToolContext(references=[])
@@ -72,6 +82,7 @@ class AgentToolTests(unittest.TestCase):
         self.assertEqual(tool_by_name["get_current_location_city"].description, GET_CURRENT_LOCATION_CITY_DESCRIPTION.strip())
         self.assertEqual(tool_by_name["query_weather"].description, QUERY_WEATHER_DESCRIPTION.strip())
         self.assertEqual(tool_by_name["generate_document"].description, GENERATE_DOCUMENT_DESCRIPTION.strip())
+        self.assertEqual(tool_by_name["read_uploaded_document"].description, READ_UPLOADED_DOCUMENT_DESCRIPTION.strip())
         self.assertIn("工具能力", tool_by_name["query_weather"].description)
         self.assertIn("参数说明", tool_by_name["query_weather"].description)
         self.assertIn("结果输出说明", tool_by_name["query_weather"].description)
@@ -130,6 +141,24 @@ class AgentToolTests(unittest.TestCase):
         self.assertEqual(generator.requests[0], {"content": "# 报告", "document_type": "markdown", "filename": "报告.md"})
         self.assertEqual(context.attachments[0]["file_id"], "doc123")
         self.assertEqual(context.attachments[0]["filename"], "报告.md")
+
+    def test_read_uploaded_document_tool_uses_context_file_ids(self):
+        chat_files = FakeChatFileService()
+        context = AgentToolContext(references=[], file_ids=["file123"])
+        tools = {
+            tool.name: tool
+            for tool in create_agent_tools(
+                vector_service=FakeVectorService(),
+                context=context,
+                chat_file_service=chat_files,
+                default_k=2,
+            )
+        }
+
+        output = tools["read_uploaded_document"].invoke({"query": "摘要", "max_chars": 1200})
+
+        self.assertIn("上传文件内容", output)
+        self.assertEqual(chat_files.requests[0], {"file_ids": ["file123"], "file_id": None, "query": "摘要", "max_chars": 1200})
 
 
 if __name__ == "__main__":

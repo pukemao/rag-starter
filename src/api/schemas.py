@@ -113,6 +113,18 @@ class AgentChatRequest(BaseModel):
     message: str = Field(..., min_length=1)
     k: int = Field(default=settings.rag.default_top_k, gt=0)
     history: list[ChatMessageRequest] = Field(default_factory=list)
+    file_ids: list[str] = Field(default_factory=list)
+
+
+class ChatFileResponse(BaseModel):
+    file_id: str
+    filename: str
+    size: int
+    content_type: str = ""
+    status: str
+    created_at: str
+    chunk_count: int
+    error: str = ""
 
 
 class RagReferenceResponse(BaseModel):

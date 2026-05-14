@@ -68,6 +68,17 @@ export type AgentChatResponse = {
   session?: ChatSessionResponse | null;
 };
 
+export type ChatFileResponse = {
+  file_id: string;
+  filename: string;
+  size: number;
+  content_type: string;
+  status: "ready" | "error" | string;
+  created_at: string;
+  chunk_count: number;
+  error: string;
+};
+
 export type GeneratedDocumentAttachment = {
   file_id: string;
   filename: string;

@@ -42,6 +42,21 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
       headers: { "Content-Type": "application/json" }
     });
   }
+  if (url.endsWith("/chat/files")) {
+    return new Response(
+      JSON.stringify({
+        file_id: "file123",
+        filename: "note.md",
+        size: 12,
+        content_type: "text/markdown",
+        status: "ready",
+        created_at: now,
+        chunk_count: 1,
+        error: ""
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
   if (url.endsWith("/agent/chat")) {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     const message = String(body.message ?? "测试 markdown");
@@ -245,6 +260,26 @@ describe("App", () => {
     const link = await screen.findByRole("link", { name: /测试报告\.md/ });
     expect(link).toHaveAttribute("href", "http://127.0.0.1:8000/generated-documents/doc123/download");
     expect(screen.getByText("Markdown · 2.0 KB")).toBeInTheDocument();
+  });
+
+  it("uploads chat file from add menu and sends file id to agent", async () => {
+    renderApp("/chat");
+
+    await userEvent.click(screen.getByRole("button", { name: "添加内容" }));
+    await userEvent.click(screen.getByRole("button", { name: "添加文件" }));
+    const fileInput = screen.getByLabelText("选择聊天文件");
+    await userEvent.upload(fileInput, new File(["# title"], "note.md", { type: "text/markdown" }));
+
+    expect(await screen.findByText("note.md")).toBeInTheDocument();
+    expect(screen.getByText("1 段")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "总结附件");
+    await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await screen.findByRole("heading", { name: "回答标题" });
+
+    const agentRequest = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/agent/chat"));
+    const body = JSON.parse(String(agentRequest?.[1]?.body ?? "{}"));
+    expect(body.file_ids).toEqual(["file123"]);
   });
 
   it("does not persist session when creating a new chat only", async () => {

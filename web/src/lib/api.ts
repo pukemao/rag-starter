@@ -2,6 +2,7 @@ import type {
   AgentChatResponse,
   ApiErrorPayload,
   ChatHistoryMessage,
+  ChatFileResponse,
   ChatResponse,
   ChatSessionListResponse,
   ChatSessionResponse,
@@ -129,10 +130,20 @@ export function chatWithAgent(input: {
   message: string;
   k?: number;
   history?: ChatHistoryMessage[];
+  file_ids?: string[];
 }) {
   return requestJson<AgentChatResponse>("/agent/chat", {
     method: "POST",
     body: JSON.stringify(input)
+  });
+}
+
+export function uploadChatFile(file: File) {
+  const formData = new FormData();
+  formData.append("file", file);
+  return requestJson<ChatFileResponse>("/chat/files", {
+    method: "POST",
+    body: formData
   });
 }
 

@@ -16,17 +16,18 @@ import {
   Download,
   FileText,
   Table2,
-  FileType
+  FileType,
+  X
 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { API_BASE_URL, chatWithAgent, deleteChatSession, getChatSession, getUserSettings, listChatSessions } from "@/lib/api";
+import { API_BASE_URL, chatWithAgent, deleteChatSession, getChatSession, getUserSettings, listChatSessions, uploadChatFile } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { ChatHistoryMessage, ChatSessionResponse, GeneratedDocumentAttachment, RagReference, UserSettingsResponse } from "@/types/api";
+import type { ChatFileResponse, ChatHistoryMessage, ChatSessionResponse, GeneratedDocumentAttachment, RagReference, UserSettingsResponse } from "@/types/api";
 
 type ChatMode = "normal" | "rag";
 
@@ -46,6 +47,11 @@ type ChatSession = {
   messages: ChatMessage[];
   createdAt: string;
   updatedAt: string;
+};
+
+type UploadingChatFile = ChatFileResponse & {
+  localId: string;
+  uploading?: boolean;
 };
 
 type MarkdownBlock =
@@ -107,8 +113,12 @@ export function ChatPage() {
   const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([]);
   const [transientError, setTransientError] = useState("");
   const [preferences, setPreferences] = useState(() => ({ showRagReferences: true, chatBackgroundImage: "", chatBackgroundOpacity: 0.2 }));
+  const [attachedFiles, setAttachedFiles] = useState<UploadingChatFile[]>([]);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const storedActiveSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
@@ -146,11 +156,13 @@ export function ChatPage() {
     mutationFn: async ({
       message,
       history,
-      sessionId
+      sessionId,
+      fileIds
     }: {
       message: string;
       history: ChatHistoryMessage[];
       sessionId: string | null;
+      fileIds: string[];
       session: ChatSession;
       userMessage: ChatMessage;
     }) => {
@@ -159,7 +171,8 @@ export function ChatPage() {
           session_id: sessionId,
           message,
           k: 2,
-          history
+          history,
+          file_ids: fileIds
         })
       };
     },
@@ -215,6 +228,8 @@ export function ChatPage() {
     setPendingMessages([]);
     setTransientError("");
     setInput("");
+    setAttachedFiles([]);
+    setAddMenuOpen(false);
   }
 
   function deleteSession(sessionId: string) {
@@ -250,7 +265,9 @@ export function ChatPage() {
   function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const message = input.trim();
-    if (!message || chatMutation.isPending) {
+    const readyFileIds = attachedFiles.filter((file) => file.status === "ready" && !file.uploading).map((file) => file.file_id);
+    const hasUploadingFiles = attachedFiles.some((file) => file.uploading);
+    if (!message || chatMutation.isPending || hasUploadingFiles) {
       return;
     }
 
@@ -266,7 +283,8 @@ export function ChatPage() {
     setPendingMessages([userMessage]);
     setTransientError("");
     setInput("");
-    chatMutation.mutate({ message, history, session, userMessage, sessionId: activeSessionId || null });
+    setAttachedFiles([]);
+    chatMutation.mutate({ message, history, session, userMessage, sessionId: activeSessionId || null, fileIds: readyFileIds });
   }
 
   function onInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -285,6 +303,78 @@ export function ChatPage() {
     const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
     textarea.style.height = `${Math.max(lineHeight, nextHeight)}px`;
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }
+
+  function openFilePicker() {
+    setAddMenuOpen(false);
+    fileInputRef.current?.click();
+  }
+
+  function onFileInputChange(event: ChangeEvent<HTMLInputElement>) {
+    void addChatFiles(event.currentTarget.files);
+    event.currentTarget.value = "";
+  }
+
+  async function addChatFiles(fileList: FileList | File[] | null) {
+    const files = Array.from(fileList ?? []);
+    if (!files.length) {
+      return;
+    }
+    setTransientError("");
+    await Promise.all(
+      files.map(async (file) => {
+        const localId = crypto.randomUUID();
+        const pendingFile: UploadingChatFile = {
+          localId,
+          file_id: localId,
+          filename: file.name,
+          size: file.size,
+          content_type: file.type,
+          status: "uploading",
+          created_at: new Date().toISOString(),
+          chunk_count: 0,
+          error: "",
+          uploading: true
+        };
+        setAttachedFiles((current) => [...current, pendingFile]);
+        try {
+          const uploaded = await uploadChatFile(file);
+          setAttachedFiles((current) => current.map((item) => (item.localId === localId ? { ...uploaded, localId, uploading: false } : item)));
+        } catch (error) {
+          const message = error instanceof Error ? error.message : "文件上传失败";
+          setAttachedFiles((current) =>
+            current.map((item) => (item.localId === localId ? { ...item, status: "error", error: message, uploading: false } : item))
+          );
+        }
+      })
+    );
+  }
+
+  function removeAttachedFile(localId: string) {
+    setAttachedFiles((current) => current.filter((file) => file.localId !== localId));
+  }
+
+  function onFormDragOver(event: DragEvent<HTMLFormElement>) {
+    if (!event.dataTransfer.types.includes("Files")) {
+      return;
+    }
+    event.preventDefault();
+    setIsDragOver(true);
+  }
+
+  function onFormDragLeave(event: DragEvent<HTMLFormElement>) {
+    if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+      setIsDragOver(false);
+    }
+  }
+
+  function onFormDrop(event: DragEvent<HTMLFormElement>) {
+    if (!event.dataTransfer.files.length) {
+      return;
+    }
+    event.preventDefault();
+    setIsDragOver(false);
+    void addChatFiles(event.dataTransfer.files);
   }
 
   function completeLocalSession(session: ChatSession, userMessage: ChatMessage, content: string, activeMode: ChatMode, references?: RagReference[]) {
@@ -429,11 +519,47 @@ export function ChatPage() {
           </div>
         </div>
 
-        <form className="relative z-20 bg-gradient-to-t from-surface via-surface/95 to-surface/0 px-4 pb-5 pt-3" onSubmit={onSubmit}>
-          <div className="mx-auto flex max-w-4xl items-center gap-3 rounded-[2rem] border bg-surface/95 px-4 py-3 shadow-[0_18px_45px_hsl(var(--foreground)/0.16)] backdrop-blur">
-            <Button type="button" variant="ghost" size="icon" className="h-10 w-10 shrink-0 rounded-full" aria-label="添加内容">
-              <Plus className="h-5 w-5" aria-hidden="true" />
-            </Button>
+        <form
+          className="relative z-20 bg-gradient-to-t from-surface via-surface/95 to-surface/0 px-4 pb-5 pt-3"
+          onSubmit={onSubmit}
+          onDragOver={onFormDragOver}
+          onDragLeave={onFormDragLeave}
+          onDrop={onFormDrop}
+        >
+          <input ref={fileInputRef} className="hidden" type="file" multiple onChange={onFileInputChange} aria-label="选择聊天文件" />
+          <div
+            className={cn(
+              "mx-auto max-w-4xl rounded-[2rem] border bg-surface/95 px-4 py-3 shadow-[0_18px_45px_hsl(var(--foreground)/0.16)] backdrop-blur transition-colors",
+              isDragOver && "border-primary bg-primary/5"
+            )}
+          >
+            {attachedFiles.length ? <ChatFileChips files={attachedFiles} onRemove={removeAttachedFile} /> : null}
+            <div className="flex items-center gap-3">
+              <div className="relative shrink-0">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-10 w-10 rounded-full"
+                  aria-label="添加内容"
+                  aria-expanded={addMenuOpen}
+                  onClick={() => setAddMenuOpen((open) => !open)}
+                >
+                  <Plus className="h-5 w-5" aria-hidden="true" />
+                </Button>
+                {addMenuOpen ? (
+                  <div className="absolute bottom-12 left-0 z-30 w-44 rounded-lg border bg-surface p-1 shadow-lg">
+                    <button
+                      type="button"
+                      className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm hover:bg-muted"
+                      onClick={openFilePicker}
+                    >
+                      <FileText className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                      添加文件
+                    </button>
+                  </div>
+                ) : null}
+              </div>
             <Textarea
               ref={inputRef}
               rows={1}
@@ -450,9 +576,16 @@ export function ChatPage() {
               }}
             />
             <div className="flex shrink-0 items-center gap-2">
-              <Button type="submit" size="icon" className="h-12 w-12 rounded-full" disabled={!input.trim() || chatMutation.isPending} aria-label="发送消息">
+              <Button
+                type="submit"
+                size="icon"
+                className="h-12 w-12 rounded-full"
+                disabled={!input.trim() || chatMutation.isPending || attachedFiles.some((file) => file.uploading)}
+                aria-label="发送消息"
+              >
                 {chatMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <Send className="h-5 w-5" aria-hidden="true" />}
               </Button>
+            </div>
             </div>
           </div>
         </form>
@@ -537,6 +670,37 @@ function MessageBubble({ message, showRagReferences }: { message: ChatMessage; s
         </div>
       ) : null}
     </article>
+  );
+}
+
+function ChatFileChips({ files, onRemove }: { files: UploadingChatFile[]; onRemove: (localId: string) => void }) {
+  return (
+    <div className="mb-3 flex flex-wrap gap-2">
+      {files.map((file) => (
+        <div
+          key={file.localId}
+          className={cn(
+            "flex max-w-full items-center gap-2 rounded-full border bg-background px-3 py-1.5 text-sm",
+            file.status === "error" && "border-destructive/40 bg-destructive/5 text-destructive"
+          )}
+        >
+          <FileText className="h-4 w-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+          <span className="max-w-[14rem] truncate">{file.filename}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {file.uploading ? "上传中" : file.status === "ready" ? `${file.chunk_count} 段` : "失败"}
+          </span>
+          {file.uploading ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden="true" /> : null}
+          <button
+            type="button"
+            className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+            aria-label={`移除 ${file.filename}`}
+            onClick={() => onRemove(file.localId)}
+          >
+            <X className="h-3.5 w-3.5" aria-hidden="true" />
+          </button>
+        </div>
+      ))}
+    </div>
   );
 }
 

@@ -122,6 +122,13 @@ class GeneratedDocumentSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class ChatUploadSettings:
+    directory: str = getenv("RAG_CHAT_UPLOAD_DIRECTORY", "storage/chat_uploads")
+    max_size_mb: int = _get_int("RAG_CHAT_UPLOAD_MAX_SIZE_MB", 20)
+    default_max_chars: int = _get_int("RAG_CHAT_FILE_DEFAULT_MAX_CHARS", 6000)
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     api: ApiSettings = ApiSettings()
     splitter: SplitterSettings = SplitterSettings()
@@ -132,6 +139,7 @@ class AppSettings:
     llm: LlmSettings = LlmSettings()
     weather: WeatherSettings = WeatherSettings()
     generated_documents: GeneratedDocumentSettings = GeneratedDocumentSettings()
+    chat_uploads: ChatUploadSettings = ChatUploadSettings()
 
 
 settings = AppSettings()

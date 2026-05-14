@@ -11,6 +11,7 @@ from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.agent import AgentChatService
+from src.chat_files import ChatFileService
 from src.config import settings
 from src.document_generator import DocumentGeneratorService
 from src.llm import DeepSeekClient, LLMConfigurationError
@@ -24,10 +25,11 @@ from .schemas import (
     AddDocumentResponse,
     AgentChatRequest,
     AgentChatResponse,
+    ChatFileResponse,
     ChatRequest,
     ChatResponse,
-    GeneratedDocumentAttachmentResponse,
     ChatMessageResponse,
+    GeneratedDocumentAttachmentResponse,
     ChatSessionListResponse,
     ChatSessionResponse,
     DeleteDocumentRequest,
@@ -114,6 +116,7 @@ def create_app(
     agent_service: AgentChatService | None = None,
     storage_service: StorageService | None = None,
     document_generator: DocumentGeneratorService | None = None,
+    chat_file_service: ChatFileService | None = None,
 ) -> FastAPI:
     """Create the FastAPI app.
 
@@ -133,7 +136,12 @@ def create_app(
     active_rag_service = rag_service or RagService(vector_service=vector_service)
     active_storage_service = storage_service or StorageService()
     active_document_generator = document_generator or DocumentGeneratorService()
-    active_agent_service = agent_service or AgentChatService(vector_service=vector_service, document_generator=active_document_generator)
+    active_chat_file_service = chat_file_service or ChatFileService()
+    active_agent_service = agent_service or AgentChatService(
+        vector_service=vector_service,
+        document_generator=active_document_generator,
+        chat_file_service=active_chat_file_service,
+    )
 
     def get_service() -> VectorStoreService:
         return vector_service
@@ -149,6 +157,9 @@ def create_app(
 
     def get_document_generator() -> DocumentGeneratorService:
         return active_document_generator
+
+    def get_chat_file_service() -> ChatFileService:
+        return active_chat_file_service
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -400,6 +411,7 @@ def create_app(
                 request.message,
                 k=request.k,
                 history=[{"role": item.role, "content": item.content} for item in request.history],
+                file_ids=request.file_ids,
             )
             references = [
                 {
@@ -441,6 +453,24 @@ def create_app(
             usage=result.usage,
             session=_session_response(session),
         )
+
+    @app.post("/chat/files", response_model=ChatFileResponse)
+    async def upload_chat_file(
+        file: UploadFile = File(..., description="Temporary file attached to the current chat"),
+        active_chat_files: ChatFileService = Depends(get_chat_file_service),
+    ) -> ChatFileResponse:
+        try:
+            content = await file.read()
+            result = active_chat_files.save_upload(
+                filename=Path(file.filename or "upload.bin").name,
+                content=content,
+                content_type=file.content_type or "",
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        finally:
+            await file.close()
+        return ChatFileResponse(**result.to_dict())
 
     @app.get("/generated-documents/{file_id}/download")
     def download_generated_document(

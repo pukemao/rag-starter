@@ -84,8 +84,8 @@ class FakeAgentService:
     def __init__(self) -> None:
         self.answer_requests = []
 
-    def answer(self, question, *, k=2, history=None):
-        self.answer_requests.append({"question": question, "k": k, "history": history})
+    def answer(self, question, *, k=2, history=None, file_ids=None):
+        self.answer_requests.append({"question": question, "k": k, "history": history, "file_ids": file_ids})
         return AgentAnswer(
             answer="agent answer",
             question=question,
@@ -108,6 +108,26 @@ class FakeAgentService:
         )
 
 
+class FakeChatFileService:
+    def __init__(self) -> None:
+        self.upload_requests = []
+
+    def save_upload(self, *, filename, content, content_type=""):
+        from src.chat_files import ChatFile
+
+        self.upload_requests.append({"filename": filename, "content": content, "content_type": content_type})
+        return ChatFile(
+            file_id="file123",
+            filename=filename,
+            size=len(content),
+            content_type=content_type,
+            status="ready",
+            created_at="2026-05-14T00:00:00+00:00",
+            chunk_count=1,
+            error="",
+        )
+
+
 class ApiTests(unittest.TestCase):
     def setUp(self):
         try:
@@ -121,12 +141,14 @@ class ApiTests(unittest.TestCase):
         self.service = FakeService()
         self.rag_service = FakeRagService()
         self.agent_service = FakeAgentService()
+        self.chat_file_service = FakeChatFileService()
         self.storage_service = StorageService(create_session_factory("sqlite:///:memory:"))
         self.client = TestClient(
             create_app(
                 service=self.service,
                 rag_service=self.rag_service,
                 agent_service=self.agent_service,
+                chat_file_service=self.chat_file_service,
                 storage_service=self.storage_service,
             )
         )
@@ -325,6 +347,7 @@ class ApiTests(unittest.TestCase):
                 "message": "根据知识库说明 hello",
                 "k": 2,
                 "history": [{"role": "user", "content": "前面聊到了 a.txt"}],
+                "file_ids": ["file123"],
             },
         )
 
@@ -343,8 +366,21 @@ class ApiTests(unittest.TestCase):
                 "question": "根据知识库说明 hello",
                 "k": 2,
                 "history": [{"role": "user", "content": "前面聊到了 a.txt"}],
+                "file_ids": ["file123"],
             },
         )
+
+    def test_upload_chat_file(self):
+        response = self.client.post(
+            "/chat/files",
+            files={"file": ("note.md", b"# title\n\nbody", "text/markdown")},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["file_id"], "file123")
+        self.assertEqual(response.json()["filename"], "note.md")
+        self.assertEqual(response.json()["chunk_count"], 1)
+        self.assertEqual(self.chat_file_service.upload_requests[0]["filename"], "note.md")
 
     def test_chat_sessions_and_settings(self):
         saved = self.storage_service.save_completed_turn(user_content="你好", assistant_content="你好呀", mode="normal")
