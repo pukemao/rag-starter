@@ -40,6 +40,7 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd pytho
 | `DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS` | `60.0` | embedding 请求超时时间 |
 | `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
 | `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
+| `RAG_DATABASE_URL` | `sqlite:///storage/app.db` | 会话、消息和用户设置的结构化数据库 |
 | `RAG_TOP_K` | `2` | RAG 对话默认检索段落数 |
 | `RAG_SYSTEM_PROMPT` | 知识库问答助手提示词 | RAG 对话默认 system prompt |
 | `RAG_LLM_PROVIDER` | `deepseek` | 默认 LLM 提供方 |
@@ -162,6 +163,11 @@ uvicorn src.api.main:app --reload
 - `POST /search`: 相似度检索
 - `POST /chat`: 普通大模型对话，支持传入历史上下文
 - `POST /rag/chat`: RAG 增强对话，基于本地知识库检索结果调用 DeepSeek
+- `GET /chat/sessions`: 列出本地持久化会话
+- `GET /chat/sessions/{session_id}`: 获取会话和消息详情
+- `DELETE /chat/sessions/{session_id}`: 删除会话和消息
+- `GET /settings`: 获取本地持久化用户设置
+- `PUT /settings`: 更新本地持久化用户设置
 
 `POST /index` 会返回每个文件的 `filename`、`source_id`、`ids`、写入 chunk 数量、输入 chunk 数量和跳过的重复 chunk 数量，方便后续追踪、删除和观察去重效果。若上传重复文件，会返回类似：
 
@@ -237,7 +243,9 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 - 状态：查看 FastAPI `/health` 状态、后端地址和当前默认 RAG 链路
 - 对话：用户端模型对话页，支持新增会话、搜索会话、本地存储会话、删除会话、上下文记忆；输入框可切换 `LLM` 与 `RAG` 模式；模型回答按 Markdown 展示；可读取用户设置决定是否显示 RAG 参考段落和聊天背景
 - 知识库：用户端知识库管理页，主页面展示文件列表；上传文件和查询知识库通过按钮弹出表单完成；上传支持拖拽和点击选择，可批量上传；查询结果在查询弹窗内展示；按文件操作优先使用 `source_id`
-- 设置：左下角设置入口进入用户设置页；设置页使用全浏览器工作区布局，包含“配置”和“个性化”设置项。“配置”用于控制 RAG 回答是否显示参考段落；“个性化”用于上传、预览、调整透明度和删除聊天背景图片；设置保存在浏览器 `localStorage`
+- 设置：左下角设置入口进入用户设置页；设置页使用全浏览器工作区布局，包含“配置”和“个性化”设置项。“配置”用于控制 RAG 回答是否显示参考段落；“个性化”用于上传、预览、调整透明度和删除聊天背景图片；设置通过后端持久化到 SQLite
+
+会话、消息和用户设置默认写入 `storage/app.db`，由后端统一管理，不再依赖浏览器 `localStorage`。向量数据仍由 Chroma 持久化到 `storage/chroma`。
 
 前端已移除早期用于接口调试的“索引”“检索”“RAG 调试”和“删除”页面；相关能力保留在后端 API 和知识库/对话业务页面中。
 

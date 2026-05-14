@@ -78,6 +78,11 @@ class VectorStoreSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class DatabaseSettings:
+    url: str = getenv("RAG_DATABASE_URL", "sqlite:///storage/app.db")
+
+
+@dataclass(frozen=True, slots=True)
 class RagSettings:
     default_top_k: int = _get_int("RAG_TOP_K", 2)
     system_prompt: str = getenv(
@@ -103,6 +108,7 @@ class AppSettings:
     splitter: SplitterSettings = SplitterSettings()
     embedding: EmbeddingSettings = EmbeddingSettings()
     vector_store: VectorStoreSettings = VectorStoreSettings()
+    database: DatabaseSettings = DatabaseSettings()
     rag: RagSettings = RagSettings()
     llm: LlmSettings = LlmSettings()
 

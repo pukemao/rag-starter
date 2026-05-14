@@ -39,6 +39,7 @@ export type ChatResponse = {
   prompt: string;
   model: string;
   usage: Record<string, unknown>;
+  session?: ChatSessionResponse | null;
 };
 
 export type RagReference = SearchResult & {
@@ -52,6 +53,35 @@ export type RagChatResponse = {
   references: RagReference[];
   model: string;
   usage: Record<string, unknown>;
+  session?: ChatSessionResponse | null;
+};
+
+export type ChatMessageResponse = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  mode?: "normal" | "rag" | null;
+  references: RagReference[];
+  created_at: string;
+};
+
+export type ChatSessionResponse = {
+  id: string;
+  title: string;
+  messages: ChatMessageResponse[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type ChatSessionListResponse = {
+  sessions: ChatSessionResponse[];
+};
+
+export type UserSettingsResponse = {
+  show_rag_references: boolean;
+  chat_background_image: string;
+  chat_background_opacity: number;
+  updated_at: string;
 };
 
 export type DeleteDocumentResponse = {

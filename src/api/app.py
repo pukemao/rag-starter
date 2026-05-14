@@ -12,6 +12,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.config import settings
 from src.llm import DeepSeekClient, LLMConfigurationError
 from src.rag import RagService
+from src.storage import StorageService
+from src.storage.service import StoredChatMessage, StoredChatSession, StoredUserSettings
 from src.vector_store import DuplicateFileError, VectorStoreService
 
 from .schemas import (
@@ -19,6 +21,9 @@ from .schemas import (
     AddDocumentResponse,
     ChatRequest,
     ChatResponse,
+    ChatMessageResponse,
+    ChatSessionListResponse,
+    ChatSessionResponse,
     DeleteDocumentRequest,
     DeleteDocumentResponse,
     IndexFileResponse,
@@ -31,6 +36,8 @@ from .schemas import (
     SearchRequest,
     SearchResponse,
     SearchResultResponse,
+    UpdateUserSettingsRequest,
+    UserSettingsResponse,
 )
 
 
@@ -60,7 +67,45 @@ def _build_chat_prompt(message: str, history: list[dict[str, str]]) -> str:
     )
 
 
-def create_app(service: VectorStoreService | None = None, rag_service: RagService | None = None) -> FastAPI:
+def _dt(value) -> str:
+    return value.isoformat()
+
+
+def _message_response(message: StoredChatMessage) -> ChatMessageResponse:
+    return ChatMessageResponse(
+        id=message.id,
+        role=message.role,
+        content=message.content,
+        mode=message.mode,
+        references=[RagReferenceResponse(**reference) for reference in message.references],
+        created_at=_dt(message.created_at),
+    )
+
+
+def _session_response(session: StoredChatSession, *, include_messages: bool = True) -> ChatSessionResponse:
+    return ChatSessionResponse(
+        id=session.id,
+        title=session.title,
+        messages=[_message_response(message) for message in session.messages] if include_messages else [],
+        created_at=_dt(session.created_at),
+        updated_at=_dt(session.updated_at),
+    )
+
+
+def _settings_response(user_settings: StoredUserSettings) -> UserSettingsResponse:
+    return UserSettingsResponse(
+        show_rag_references=user_settings.show_rag_references,
+        chat_background_image=user_settings.chat_background_image,
+        chat_background_opacity=user_settings.chat_background_opacity,
+        updated_at=_dt(user_settings.updated_at),
+    )
+
+
+def create_app(
+    service: VectorStoreService | None = None,
+    rag_service: RagService | None = None,
+    storage_service: StorageService | None = None,
+) -> FastAPI:
     """Create the FastAPI app.
 
     Passing services is mainly useful for tests. When omitted, the app uses the
@@ -77,12 +122,16 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
     )
     vector_service = service or VectorStoreService()
     active_rag_service = rag_service or RagService(vector_service=vector_service)
+    active_storage_service = storage_service or StorageService()
 
     def get_service() -> VectorStoreService:
         return vector_service
 
     def get_rag_service() -> RagService:
         return active_rag_service
+
+    def get_storage_service() -> StorageService:
+        return active_storage_service
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -245,7 +294,7 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
         )
 
     @app.post("/chat", response_model=ChatResponse)
-    def chat(request: ChatRequest) -> ChatResponse:
+    def chat(request: ChatRequest, active_storage: StorageService = Depends(get_storage_service)) -> ChatResponse:
         try:
             prompt = _build_chat_prompt(
                 request.message,
@@ -257,16 +306,23 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
             )
+            session = active_storage.save_completed_turn(
+                session_id=request.session_id,
+                user_content=request.message,
+                assistant_content=result.content,
+                mode="normal",
+            )
         except LLMConfigurationError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return ChatResponse(answer=result.content, prompt=prompt, model=result.model, usage=result.usage)
+        return ChatResponse(answer=result.content, prompt=prompt, model=result.model, usage=result.usage, session=_session_response(session))
 
     @app.post("/rag/chat", response_model=RagChatResponse)
     def rag_chat(
         request: RagChatRequest,
         active_service: RagService = Depends(get_rag_service),
+        active_storage: StorageService = Depends(get_storage_service),
     ) -> RagChatResponse:
         try:
             result = active_service.answer(
@@ -277,6 +333,22 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
                 system_prompt=request.system_prompt,
                 temperature=request.temperature,
                 max_tokens=request.max_tokens,
+            )
+            references = [
+                {
+                    "index": reference.index,
+                    "page_content": reference.page_content,
+                    "metadata": reference.metadata,
+                    "score": reference.score,
+                }
+                for reference in result.references
+            ]
+            session = active_storage.save_completed_turn(
+                session_id=request.session_id,
+                user_content=request.question,
+                assistant_content=result.answer,
+                mode="rag",
+                references=references,
             )
         except LLMConfigurationError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -297,6 +369,39 @@ def create_app(service: VectorStoreService | None = None, rag_service: RagServic
             ],
             model=result.model,
             usage=result.usage,
+            session=_session_response(session),
+        )
+
+    @app.get("/chat/sessions", response_model=ChatSessionListResponse)
+    def list_chat_sessions(active_storage: StorageService = Depends(get_storage_service)) -> ChatSessionListResponse:
+        return ChatSessionListResponse(sessions=[_session_response(session, include_messages=False) for session in active_storage.list_sessions()])
+
+    @app.get("/chat/sessions/{session_id}", response_model=ChatSessionResponse)
+    def get_chat_session(session_id: str, active_storage: StorageService = Depends(get_storage_service)) -> ChatSessionResponse:
+        session = active_storage.get_session(session_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="会话不存在")
+        return _session_response(session)
+
+    @app.delete("/chat/sessions/{session_id}", response_model=dict)
+    def delete_chat_session(session_id: str, active_storage: StorageService = Depends(get_storage_service)) -> dict[str, bool]:
+        return {"deleted": active_storage.delete_session(session_id)}
+
+    @app.get("/settings", response_model=UserSettingsResponse)
+    def get_user_settings(active_storage: StorageService = Depends(get_storage_service)) -> UserSettingsResponse:
+        return _settings_response(active_storage.get_settings())
+
+    @app.put("/settings", response_model=UserSettingsResponse)
+    def update_user_settings(
+        request: UpdateUserSettingsRequest,
+        active_storage: StorageService = Depends(get_storage_service),
+    ) -> UserSettingsResponse:
+        return _settings_response(
+            active_storage.update_settings(
+                show_rag_references=request.show_rag_references,
+                chat_background_image=request.chat_background_image,
+                chat_background_opacity=request.chat_background_opacity,
+            )
         )
 
     return app

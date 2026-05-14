@@ -1,10 +1,12 @@
 import { ArrowLeft, ImagePlus, Palette, Settings, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
+import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { clampOpacity, loadUserPreferences, saveUserPreferences, type UserPreferences } from "@/lib/userPreferences";
+import { getUserSettings, updateUserSettings } from "@/lib/api";
+import { clampOpacity, DEFAULT_USER_PREFERENCES, type UserPreferences } from "@/lib/userPreferences";
 import { cn } from "@/lib/utils";
 
 type SettingsItemId = "config" | "personalization";
@@ -16,15 +18,37 @@ const settingsItems: Array<{ id: SettingsItemId; label: string; icon: typeof Set
 
 export function SettingsPage() {
   const [activeItem, setActiveItem] = useState<SettingsItemId>("config");
-  const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
+  const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_USER_PREFERENCES);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
+  const settingsQuery = useQuery({
+    queryKey: ["user-settings"],
+    queryFn: getUserSettings
+  });
+  const settingsMutation = useMutation({
+    mutationFn: updateUserSettings
+  });
+
   useEffect(() => {
-    saveUserPreferences(preferences);
-  }, [preferences]);
+    if (settingsQuery.data) {
+      setPreferences({
+        showRagReferences: settingsQuery.data.show_rag_references,
+        chatBackgroundImage: settingsQuery.data.chat_background_image,
+        chatBackgroundOpacity: settingsQuery.data.chat_background_opacity
+      });
+    }
+  }, [settingsQuery.data]);
 
   function updatePreference(nextPreference: Partial<UserPreferences>) {
-    setPreferences((current) => ({ ...current, ...nextPreference }));
+    setPreferences((current) => {
+      const next = { ...current, ...nextPreference };
+      settingsMutation.mutate({
+        show_rag_references: next.showRagReferences,
+        chat_background_image: next.chatBackgroundImage,
+        chat_background_opacity: next.chatBackgroundOpacity
+      });
+      return next;
+    });
   }
 
   function onBackgroundUpload(event: ChangeEvent<HTMLInputElement>) {

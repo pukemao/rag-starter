@@ -89,6 +89,7 @@ class ChatMessageRequest(BaseModel):
 
 
 class ChatRequest(BaseModel):
+    session_id: str | None = None
     message: str = Field(..., min_length=1)
     history: list[ChatMessageRequest] = Field(default_factory=list)
     system_prompt: str | None = None
@@ -96,14 +97,8 @@ class ChatRequest(BaseModel):
     max_tokens: int | None = Field(default=None, gt=0)
 
 
-class ChatResponse(BaseModel):
-    answer: str
-    prompt: str
-    model: str
-    usage: dict[str, Any] = Field(default_factory=dict)
-
-
 class RagChatRequest(BaseModel):
+    session_id: str | None = None
     question: str = Field(..., min_length=1)
     k: int = Field(default=settings.rag.default_top_k, gt=0)
     filter: dict[str, Any] | None = None
@@ -120,6 +115,35 @@ class RagReferenceResponse(BaseModel):
     score: float | None = None
 
 
+class ChatMessageResponse(BaseModel):
+    id: str
+    role: str
+    content: str
+    mode: str | None = None
+    references: list[RagReferenceResponse] = Field(default_factory=list)
+    created_at: str
+
+
+class ChatSessionResponse(BaseModel):
+    id: str
+    title: str
+    messages: list[ChatMessageResponse] = Field(default_factory=list)
+    created_at: str
+    updated_at: str
+
+
+class ChatSessionListResponse(BaseModel):
+    sessions: list[ChatSessionResponse]
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    prompt: str
+    model: str
+    usage: dict[str, Any] = Field(default_factory=dict)
+    session: ChatSessionResponse | None = None
+
+
 class RagChatResponse(BaseModel):
     answer: str
     question: str
@@ -127,3 +151,17 @@ class RagChatResponse(BaseModel):
     references: list[RagReferenceResponse]
     model: str
     usage: dict[str, Any] = Field(default_factory=dict)
+    session: ChatSessionResponse | None = None
+
+
+class UserSettingsResponse(BaseModel):
+    show_rag_references: bool
+    chat_background_image: str = ""
+    chat_background_opacity: float
+    updated_at: str
+
+
+class UpdateUserSettingsRequest(BaseModel):
+    show_rag_references: bool | None = None
+    chat_background_image: str | None = None
+    chat_background_opacity: float | None = Field(default=None, ge=0.05, le=1.0)

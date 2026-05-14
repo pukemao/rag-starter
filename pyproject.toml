@@ -13,6 +13,7 @@ dependencies = [
     "langchain-text-splitters",
     "python-dotenv",
     "python-multipart",
+    "sqlalchemy",
     "uvicorn",
 ]
 

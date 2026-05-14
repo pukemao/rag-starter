@@ -2,12 +2,15 @@ import type {
   ApiErrorPayload,
   ChatHistoryMessage,
   ChatResponse,
+  ChatSessionListResponse,
+  ChatSessionResponse,
   DeleteDocumentResponse,
   HealthResponse,
   IndexResponse,
   ListDocumentsResponse,
   RagChatResponse,
-  SearchResponse
+  SearchResponse,
+  UserSettingsResponse
 } from "@/types/api";
 
 export const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://127.0.0.1:8000";
@@ -93,6 +96,7 @@ export function searchKnowledgeBase(input: { query: string; k: number; filter?: 
 }
 
 export function chatWithModel(input: {
+  session_id?: string | null;
   message: string;
   history?: ChatHistoryMessage[];
   temperature?: number | null;
@@ -105,6 +109,7 @@ export function chatWithModel(input: {
 }
 
 export function chatWithRag(input: {
+  session_id?: string | null;
   question: string;
   k: number;
   filter?: Record<string, unknown> | null;
@@ -121,6 +126,31 @@ export function chatWithRag(input: {
 export function deleteDocuments(input: { ids?: string[] | null; source?: string | null; source_id?: string | null }) {
   return requestJson<DeleteDocumentResponse>("/documents", {
     method: "DELETE",
+    body: JSON.stringify(input)
+  });
+}
+
+export function listChatSessions() {
+  return requestJson<ChatSessionListResponse>("/chat/sessions");
+}
+
+export function getChatSession(sessionId: string) {
+  return requestJson<ChatSessionResponse>(`/chat/sessions/${sessionId}`);
+}
+
+export function deleteChatSession(sessionId: string) {
+  return requestJson<{ deleted: boolean }>(`/chat/sessions/${sessionId}`, {
+    method: "DELETE"
+  });
+}
+
+export function getUserSettings() {
+  return requestJson<UserSettingsResponse>("/settings");
+}
+
+export function updateUserSettings(input: Partial<Pick<UserSettingsResponse, "show_rag_references" | "chat_background_image" | "chat_background_opacity">>) {
+  return requestJson<UserSettingsResponse>("/settings", {
+    method: "PUT",
     body: JSON.stringify(input)
   });
 }

@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen, Plus, ChevronDown } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 
@@ -6,10 +6,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { chatWithModel, chatWithRag } from "@/lib/api";
-import { loadUserPreferences, type UserPreferences } from "@/lib/userPreferences";
+import { chatWithModel, chatWithRag, deleteChatSession, getChatSession, getUserSettings, listChatSessions } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { ChatHistoryMessage, RagReference } from "@/types/api";
+import type { ChatHistoryMessage, ChatSessionResponse, RagReference, UserSettingsResponse } from "@/types/api";
 
 type ChatMode = "normal" | "rag";
 
@@ -38,8 +37,6 @@ type MarkdownBlock =
   | { type: "quote"; content: string }
   | { type: "code"; language: string; content: string };
 
-const STORAGE_KEY = "rag-starter.chat.sessions";
-
 function createDraftSession(): ChatSession {
   const now = new Date().toISOString();
   return {
@@ -51,9 +48,34 @@ function createDraftSession(): ChatSession {
   };
 }
 
+function toChatSession(session: ChatSessionResponse): ChatSession {
+  return {
+    id: session.id,
+    title: session.title,
+    messages: session.messages.map((message) => ({
+      id: message.id,
+      role: message.role,
+      content: message.content,
+      mode: message.mode ?? undefined,
+      references: message.references,
+      createdAt: message.created_at
+    })),
+    createdAt: session.created_at,
+    updatedAt: session.updated_at
+  };
+}
+
+function toUserPreferences(settings: UserSettingsResponse) {
+  return {
+    showRagReferences: settings.show_rag_references,
+    chatBackgroundImage: settings.chat_background_image,
+    chatBackgroundOpacity: settings.chat_background_opacity
+  };
+}
+
 export function ChatPage() {
-  const [sessions, setSessions] = useState<ChatSession[]>(() => loadSessions());
-  const [activeSessionId, setActiveSessionId] = useState(() => sessions[0]?.id ?? "");
+  const [sessions, setSessions] = useState<ChatSession[]>([]);
+  const [activeSessionId, setActiveSessionId] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<ChatMode>("normal");
@@ -61,7 +83,7 @@ export function ChatPage() {
   const [draftSession, setDraftSession] = useState<ChatSession | null>(null);
   const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([]);
   const [transientError, setTransientError] = useState("");
-  const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
+  const [preferences, setPreferences] = useState(() => ({ showRagReferences: true, chatBackgroundImage: "", chatBackgroundOpacity: 0.2 }));
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -82,15 +104,28 @@ export function ChatPage() {
     });
   }, [sessions, conversationSearch]);
 
+  const sessionsQuery = useQuery({
+    queryKey: ["chat-sessions"],
+    queryFn: listChatSessions,
+    staleTime: 30_000
+  });
+
+  const settingsQuery = useQuery({
+    queryKey: ["user-settings"],
+    queryFn: getUserSettings
+  });
+
   const chatMutation = useMutation({
     mutationFn: async ({
       message,
       history,
-      activeMode
+      activeMode,
+      sessionId
     }: {
       message: string;
       history: ChatHistoryMessage[];
       activeMode: ChatMode;
+      sessionId: string | null;
       session: ChatSession;
       userMessage: ChatMessage;
     }) => {
@@ -98,6 +133,7 @@ export function ChatPage() {
         return {
           activeMode,
           response: await chatWithRag({
+            session_id: sessionId,
             question: message,
             k: 2,
             history
@@ -107,13 +143,15 @@ export function ChatPage() {
       return {
         activeMode,
         response: await chatWithModel({
+          session_id: sessionId,
           message,
           history
         })
       };
     },
-    onSuccess: ({ response, activeMode }, variables) => {
-      completeAssistantMessage(variables.session, variables.userMessage, response.answer, activeMode, "references" in response ? response.references : undefined);
+    onSuccess: ({ response }, variables) => {
+      const nextSession = response.session ? toChatSession(response.session) : completeLocalSession(variables.session, variables.userMessage, response.answer, variables.activeMode, "references" in response ? response.references : undefined);
+      persistReturnedSession(nextSession);
     },
     onError: (error) => {
       setPendingMessages([]);
@@ -122,14 +160,28 @@ export function ChatPage() {
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sessions));
-  }, [sessions]);
+    if (sessionsQuery.data) {
+      setSessions((current) =>
+        sessionsQuery.data.sessions.map((session) => {
+          const next = toChatSession(session);
+          const existing = current.find((item) => item.id === next.id);
+          return existing?.messages.length ? { ...next, messages: existing.messages } : next;
+        })
+      );
+    }
+  }, [sessionsQuery.data]);
 
   useEffect(() => {
-    if (!activeSessionId && sessions[0]) {
-      setActiveSessionId(sessions[0].id);
+    if (settingsQuery.data) {
+      setPreferences(toUserPreferences(settingsQuery.data));
     }
-  }, [activeSessionId, sessions]);
+  }, [settingsQuery.data]);
+
+  useEffect(() => {
+    if (!activeSessionId && !draftSession && sessions[0]) {
+      void activateSession(sessions[0].id);
+    }
+  }, [activeSessionId, draftSession, sessions]);
 
   useEffect(() => {
     if (typeof messageEndRef.current?.scrollIntoView === "function") {
@@ -140,19 +192,6 @@ export function ChatPage() {
   useEffect(() => {
     resizeInput();
   }, [input]);
-
-  useEffect(() => {
-    function syncPreferences() {
-      setPreferences(loadUserPreferences());
-    }
-
-    window.addEventListener("storage", syncPreferences);
-    window.addEventListener("focus", syncPreferences);
-    return () => {
-      window.removeEventListener("storage", syncPreferences);
-      window.removeEventListener("focus", syncPreferences);
-    };
-  }, []);
 
   function createSession() {
     setDraftSession(createDraftSession());
@@ -167,6 +206,9 @@ export function ChatPage() {
     if (!confirmed) {
       return;
     }
+    void deleteChatSession(sessionId).catch((error) => {
+      setTransientError(error instanceof Error ? error.message : "删除会话失败");
+    });
     setSessions((current) => {
       const next = current.filter((session) => session.id !== sessionId);
       if (activeSessionId === sessionId) {
@@ -176,11 +218,17 @@ export function ChatPage() {
     });
   }
 
-  function activateSession(sessionId: string) {
+  async function activateSession(sessionId: string) {
     setActiveSessionId(sessionId);
     setDraftSession(null);
     setPendingMessages([]);
     setTransientError("");
+    try {
+      const session = toChatSession(await getChatSession(sessionId));
+      persistReturnedSession(session);
+    } catch (error) {
+      setTransientError(error instanceof Error ? error.message : "加载会话失败");
+    }
   }
 
   function onSubmit(event: FormEvent<HTMLFormElement>) {
@@ -203,7 +251,7 @@ export function ChatPage() {
     setPendingMessages([userMessage]);
     setTransientError("");
     setInput("");
-    chatMutation.mutate({ message, history, activeMode: mode, session, userMessage });
+    chatMutation.mutate({ message, history, activeMode: mode, session, userMessage, sessionId: activeSessionId || null });
   }
 
   function onInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -224,7 +272,7 @@ export function ChatPage() {
     textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
   }
 
-  function completeAssistantMessage(session: ChatSession, userMessage: ChatMessage, content: string, activeMode: ChatMode, references?: RagReference[]) {
+  function completeLocalSession(session: ChatSession, userMessage: ChatMessage, content: string, activeMode: ChatMode, references?: RagReference[]) {
     const assistantMessage: ChatMessage = {
       id: crypto.randomUUID(),
       role: "assistant",
@@ -233,28 +281,24 @@ export function ChatPage() {
       references,
       createdAt: new Date().toISOString()
     };
-    saveCompletedTurn(session, userMessage, assistantMessage);
+    const now = new Date().toISOString();
+    return {
+      ...session,
+      title: session.title === "新会话" ? titleFromMessage(userMessage.content) : session.title,
+      messages: [...session.messages, userMessage, assistantMessage],
+      updatedAt: now
+    };
   }
 
-  function saveCompletedTurn(session: ChatSession, userMessage: ChatMessage, assistantMessage: ChatMessage) {
-    const now = new Date().toISOString();
-    const messages = [...session.messages, userMessage, assistantMessage];
+  function persistReturnedSession(nextSession: ChatSession) {
+    setActiveSessionId(nextSession.id);
+    setDraftSession(null);
+    setPendingMessages([]);
+    setTransientError("");
     setSessions((current) => {
-      const exists = current.some((item) => item.id === session.id);
-      const nextSession: ChatSession = {
-        ...session,
-        title: session.title === "新会话" ? titleFromMessage(userMessage.content) : session.title,
-        messages,
-        updatedAt: now
-      };
-      setActiveSessionId(nextSession.id);
-      setDraftSession(null);
-      setPendingMessages([]);
-      setTransientError("");
-      if (!exists) {
-        return [nextSession, ...current];
-      }
-      return [nextSession, ...current.filter((item) => item.id !== session.id)];
+      const exists = current.some((item) => item.id === nextSession.id);
+      const withoutCurrent = current.filter((item) => item.id !== nextSession.id);
+      return exists ? [nextSession, ...withoutCurrent] : [nextSession, ...current];
     });
   }
 
@@ -300,7 +344,7 @@ export function ChatPage() {
               >
                 <button className="min-h-11 min-w-0 flex-1 text-left" type="button" onClick={() => activateSession(session.id)}>
                   <span className="block truncate text-sm font-medium">{session.title}</span>
-                  <span className="mt-1 block truncate text-xs text-muted-foreground">{session.messages.at(-1)?.content || "暂无消息"}</span>
+                  <span className="mt-1 block truncate text-xs text-muted-foreground">{session.messages.at(-1)?.content || "点击查看会话"}</span>
                 </button>
                 <Button variant="ghost" size="icon" aria-label={`删除 ${session.title}`} onClick={() => deleteSession(session.id)}>
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -637,19 +681,6 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   }
 
   return nodes;
-}
-
-function loadSessions(): ChatSession[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      return [];
-    }
-    const parsed = JSON.parse(raw) as ChatSession[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
 }
 
 function toHistory(messages: ChatMessage[]): ChatHistoryMessage[] {

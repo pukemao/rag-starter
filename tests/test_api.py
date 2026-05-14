@@ -87,10 +87,12 @@ class ApiTests(unittest.TestCase):
             self.skipTest(f"FastAPI 未安装: {exc}")
 
         from src.api import create_app
+        from src.storage import StorageService, create_session_factory
 
         self.service = FakeService()
         self.rag_service = FakeRagService()
-        self.client = TestClient(create_app(service=self.service, rag_service=self.rag_service))
+        self.storage_service = StorageService(create_session_factory("sqlite:///:memory:"))
+        self.client = TestClient(create_app(service=self.service, rag_service=self.rag_service, storage_service=self.storage_service))
 
     def test_health(self):
         response = self.client.get("/health")
@@ -231,6 +233,8 @@ class ApiTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.json()["answer"], "chat answer")
+        self.assertEqual(response.json()["session"]["messages"][0]["content"], "继续说明")
+        self.assertEqual(response.json()["session"]["messages"][1]["content"], "chat answer")
         self.assertIn("前面的问题", response.json()["prompt"])
         self.assertIn("继续说明", response.json()["prompt"])
         self.assertEqual(fake_client.temperature, 0.1)
@@ -259,8 +263,11 @@ class ApiTests(unittest.TestCase):
                 "references": [{"index": 1, "page_content": "hello", "metadata": {"source": "a.txt"}, "score": 0.5}],
                 "model": "deepseek-test",
                 "usage": {"total_tokens": 8},
+                "session": response.json()["session"],
             },
         )
+        self.assertEqual(response.json()["session"]["messages"][0]["content"], "hello?")
+        self.assertEqual(response.json()["session"]["messages"][1]["references"][0]["page_content"], "hello")
         self.assertEqual(
             self.rag_service.answer_requests[0],
             {
@@ -273,6 +280,30 @@ class ApiTests(unittest.TestCase):
                 "max_tokens": 128,
             },
         )
+
+    def test_chat_sessions_and_settings(self):
+        saved = self.storage_service.save_completed_turn(user_content="你好", assistant_content="你好呀", mode="normal")
+
+        response = self.client.get("/chat/sessions")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["sessions"][0]["id"], saved.id)
+        self.assertEqual(response.json()["sessions"][0]["messages"], [])
+
+        detail_response = self.client.get(f"/chat/sessions/{saved.id}")
+        self.assertEqual(detail_response.status_code, 200)
+        self.assertEqual(len(detail_response.json()["messages"]), 2)
+
+        settings_response = self.client.put(
+            "/settings",
+            json={"show_rag_references": False, "chat_background_image": "data:image/png;base64,abc", "chat_background_opacity": 0.7},
+        )
+        self.assertEqual(settings_response.status_code, 200)
+        self.assertFalse(settings_response.json()["show_rag_references"])
+        self.assertEqual(settings_response.json()["chat_background_opacity"], 0.7)
+
+        delete_response = self.client.delete(f"/chat/sessions/{saved.id}")
+        self.assertEqual(delete_response.status_code, 200)
+        self.assertEqual(delete_response.json(), {"deleted": True})
 
 
 if __name__ == "__main__":
