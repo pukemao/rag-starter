@@ -63,3 +63,63 @@ button {
   border-radius: 999px;
   background-clip: content-box;
 }
+
+.settings-range {
+  --range-progress: 0%;
+  display: block;
+  width: 100%;
+  height: 24px;
+  margin: 0;
+  appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.settings-range:focus-visible {
+  outline: 2px solid hsl(var(--ring));
+  outline-offset: 3px;
+}
+
+.settings-range::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    hsl(var(--primary)) 0%,
+    hsl(var(--primary)) var(--range-progress),
+    hsl(var(--muted)) var(--range-progress),
+    hsl(var(--muted)) 100%
+  );
+}
+
+.settings-range::-webkit-slider-thumb {
+  width: 20px;
+  height: 20px;
+  margin-top: -6px;
+  appearance: none;
+  border: 2px solid hsl(var(--primary));
+  border-radius: 999px;
+  background: hsl(var(--surface));
+  box-shadow: 0 1px 4px hsl(var(--foreground) / 0.18);
+}
+
+.settings-range::-moz-range-track {
+  height: 8px;
+  border-radius: 999px;
+  background: hsl(var(--muted));
+}
+
+.settings-range::-moz-range-progress {
+  height: 8px;
+  border-radius: 999px;
+  background: hsl(var(--primary));
+}
+
+.settings-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 2px solid hsl(var(--primary));
+  border-radius: 999px;
+  background: hsl(var(--surface));
+  box-shadow: 0 1px 4px hsl(var(--foreground) / 0.18);
+}

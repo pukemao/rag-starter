@@ -1,9 +1,8 @@
 import { ArrowLeft, ImagePlus, Settings, Trash2 } from "lucide-react";
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { clampOpacity, loadUserPreferences, saveUserPreferences, type UserPreferences } from "@/lib/userPreferences";
 import { cn } from "@/lib/utils";
@@ -39,6 +38,8 @@ export function SettingsPage() {
   function removeBackground() {
     updatePreference({ chatBackgroundImage: "" });
   }
+
+  const backgroundOpacityPercent = Math.round(preferences.chatBackgroundOpacity * 100);
 
   return (
     <div className="grid h-[calc(100dvh-10px)] overflow-hidden rounded-lg border bg-surface shadow-sm lg:grid-cols-[260px_minmax(0,1fr)]">
@@ -143,15 +144,17 @@ export function SettingsPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between gap-3">
                         <Label htmlFor="background-opacity">背景透明度</Label>
-                        <span className="text-sm tabular-nums text-muted-foreground">{Math.round(preferences.chatBackgroundOpacity * 100)}%</span>
+                        <span className="text-sm tabular-nums text-muted-foreground">{backgroundOpacityPercent}%</span>
                       </div>
-                      <Input
+                      <input
                         id="background-opacity"
+                        className="settings-range"
                         type="range"
                         min="5"
                         max="100"
                         step="5"
-                        value={Math.round(preferences.chatBackgroundOpacity * 100)}
+                        value={backgroundOpacityPercent}
+                        style={{ "--range-progress": `${((backgroundOpacityPercent - 5) / 95) * 100}%` } as CSSProperties}
                         onChange={(event) => updatePreference({ chatBackgroundOpacity: clampOpacity(Number(event.target.value) / 100) })}
                       />
                     </div>
