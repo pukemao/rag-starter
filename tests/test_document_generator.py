@@ -38,6 +38,25 @@ class DocumentGeneratorServiceTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 service.generate(content="content", document_type="ppt")
 
+    def test_pdf_wraps_long_chinese_lines(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            service = DocumentGeneratorService(output_directory=tmpdir)
+            long_content = (
+                "# 洛龙湖社区残联工作总结报告\n\n"
+                "2021年，洛龙湖社区在区残联和龙城街道办事处残联的领导下，"
+                "社区残联各项工作取得了阶段性成效。本报告对年度重点工作、活动组织、"
+                "需求走访和后续改进方向进行系统总结，便于快速了解社区残联工作全貌。"
+            )
+
+            attachment = service.generate(content=long_content, document_type="pdf", filename="wrap.pdf")
+            path = service.get_file_path(attachment.file_id)
+
+            self.assertIsNotNone(path)
+            raw = path.read_bytes().decode("latin-1", errors="ignore")
+            text_lines = [line for line in raw.splitlines() if line.startswith("<") and line.endswith("> Tj")]
+            self.assertGreater(len(text_lines), 3)
+            self.assertLess(max(len(line) for line in text_lines), 190)
+
 
 if __name__ == "__main__":
     unittest.main()

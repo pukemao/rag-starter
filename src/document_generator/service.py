@@ -5,7 +5,6 @@ from __future__ import annotations
 import csv
 import json
 import re
-import textwrap
 import zipfile
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -177,19 +176,18 @@ class DocumentGeneratorService:
 
     @staticmethod
     def _write_pdf(path: Path, content: str) -> None:
-        title, body = _extract_title_and_body(content)
-        lines: list[str] = []
+        title, body = _extract_title_and_body(_normalize_markdown_for_pdf(content))
+        paragraphs: list[str] = []
         if title:
-            lines.append(title)
-            lines.append("")
+            paragraphs.append(title)
+            paragraphs.append("")
         for raw_line in body.splitlines():
-            normalized = re.sub(r"^#{1,6}\s+", "", raw_line).strip()
-            if not normalized:
-                lines.append("")
+            normalized = _pdf_plain_text(raw_line)
+            if not normalized or normalized == "---":
+                paragraphs.append("")
                 continue
-            wrapped = textwrap.wrap(normalized, width=74) or [normalized]
-            lines.extend(wrapped)
-        _write_basic_pdf(path, lines)
+            paragraphs.extend(_wrap_pdf_line(normalized))
+        _write_basic_pdf(path, paragraphs)
 
 
 def _looks_like_markdown_table_row(line: str) -> bool:
@@ -249,6 +247,56 @@ def _extract_title_and_body(content: str) -> tuple[str, str]:
     return "", content
 
 
+def _normalize_markdown_for_pdf(content: str) -> str:
+    return content.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _pdf_plain_text(line: str) -> str:
+    normalized = line.strip()
+    normalized = re.sub(r"^>\s*", "", normalized)
+    normalized = re.sub(r"^#{1,6}\s+", "", normalized)
+    normalized = re.sub(r"^[-*+]\s+", "- ", normalized)
+    normalized = re.sub(r"^\d+[.)]\s+", lambda match: match.group(0).replace(")", "."), normalized)
+    normalized = re.sub(r"\*\*([^*]+)\*\*", r"\1", normalized)
+    normalized = re.sub(r"\*([^*]+)\*", r"\1", normalized)
+    normalized = re.sub(r"`([^`]+)`", r"\1", normalized)
+    normalized = re.sub(r"\s+", " ", normalized)
+    return normalized.strip()
+
+
+def _wrap_pdf_line(text: str, max_width: float = 485.0, font_size: float = 11.0) -> list[str]:
+    lines: list[str] = []
+    current = ""
+    current_width = 0.0
+    for char in text:
+        char_width = _pdf_char_width(char, font_size)
+        if current and current_width + char_width > max_width:
+            lines.append(current.rstrip())
+            current = char
+            current_width = char_width
+        else:
+            current += char
+            current_width += char_width
+    if current.strip():
+        lines.append(current.rstrip())
+    return lines or [text]
+
+
+def _pdf_char_width(char: str, font_size: float) -> float:
+    codepoint = ord(char)
+    if char == "\t":
+        return font_size * 2
+    if char.isspace():
+        return font_size * 0.35
+    if 0x2E80 <= codepoint <= 0x9FFF or 0xF900 <= codepoint <= 0xFAFF or 0xFF00 <= codepoint <= 0xFFEF:
+        return font_size
+    if char in "MW@#%&":
+        return font_size * 0.9
+    if char in "ilI.,:;!|":
+        return font_size * 0.3
+    return font_size * 0.55
+
+
 def _pdf_hex_text(value: str) -> str:
     return value.encode("utf-16-be", errors="replace").hex().upper()
 
@@ -280,6 +328,8 @@ def _write_basic_pdf(path: Path, lines: list[str]) -> None:
             first = False
             if y < bottom:
                 break
+            if not line:
+                continue
             commands.append(f"<{_pdf_hex_text(line)}> Tj")
         commands.append("ET")
         stream = "\n".join(commands).encode("latin-1", errors="replace")
