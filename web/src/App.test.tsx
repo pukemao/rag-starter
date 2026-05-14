@@ -161,7 +161,9 @@ describe("App", () => {
 
   it("renders status page by default", async () => {
     renderApp();
-    expect(await screen.findByRole("heading", { name: "知识库工作台" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "系统控制台" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "知识库概览" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Agent 对话动态" })).toBeInTheDocument();
   });
 
   it("renders user chat route", () => {
