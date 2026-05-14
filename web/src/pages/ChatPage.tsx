@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
-import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
+import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,6 +29,14 @@ type ChatSession = {
   updatedAt: string;
 };
 
+type MarkdownBlock =
+  | { type: "heading"; level: 1 | 2 | 3; content: string }
+  | { type: "paragraph"; content: string }
+  | { type: "ul"; items: string[] }
+  | { type: "ol"; items: string[] }
+  | { type: "quote"; content: string }
+  | { type: "code"; language: string; content: string };
+
 const STORAGE_KEY = "rag-starter.chat.sessions";
 
 export function ChatPage() {
@@ -37,7 +45,9 @@ export function ChatPage() {
   const [conversationSearch, setConversationSearch] = useState("");
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<ChatMode>("normal");
+  const [sidebarOpen, setSidebarOpen] = useState(true);
   const messageEndRef = useRef<HTMLDivElement | null>(null);
+  const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
   const activeSession = useMemo(
     () => sessions.find((session) => session.id === activeSessionId) ?? sessions[0] ?? null,
@@ -98,6 +108,10 @@ export function ChatPage() {
     }
   }, [activeSession?.messages.length, chatMutation.isPending]);
 
+  useEffect(() => {
+    resizeInput();
+  }, [input]);
+
   function createSession() {
     const now = new Date().toISOString();
     const session: ChatSession = {
@@ -147,6 +161,24 @@ export function ChatPage() {
     chatMutation.mutate({ message, history, activeMode: mode });
   }
 
+  function onInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
+    setInput(event.target.value);
+  }
+
+  function resizeInput() {
+    const textarea = inputRef.current;
+    if (!textarea) {
+      return;
+    }
+    textarea.style.height = "0px";
+    const lineHeight = 24;
+    const maxRows = 6;
+    const maxHeight = lineHeight * maxRows;
+    const nextHeight = Math.min(textarea.scrollHeight, maxHeight);
+    textarea.style.height = `${Math.max(lineHeight, nextHeight)}px`;
+    textarea.style.overflowY = textarea.scrollHeight > maxHeight ? "auto" : "hidden";
+  }
+
   function appendAssistantMessage(content: string, activeMode: ChatMode, references?: RagReference[]) {
     const session = activeSession ?? createEmptySession();
     const assistantMessage: ChatMessage = {
@@ -192,9 +224,14 @@ export function ChatPage() {
   }
 
   return (
-    <div className="grid min-h-[calc(100dvh-7rem)] overflow-hidden rounded-lg border bg-surface shadow-sm xl:grid-cols-[300px_minmax(0,1fr)]">
-      <aside className="border-b bg-muted/30 xl:border-b-0 xl:border-r">
-        <div className="space-y-3 border-b p-4">
+    <div
+      className={cn(
+        "grid h-[calc(100dvh-10px)] overflow-hidden rounded-lg border bg-surface shadow-sm",
+        sidebarOpen ? "xl:grid-cols-[300px_minmax(0,1fr)]" : "xl:grid-cols-[minmax(0,1fr)]"
+      )}
+    >
+      <aside className={cn("min-h-0 border-b bg-muted/30 xl:border-b-0 xl:border-r", !sidebarOpen && "hidden")}>
+        <div className="space-y-3 border-b p-3">
           <Button className="w-full justify-start" onClick={createSession}>
             <MessageSquarePlus className="h-4 w-4" aria-hidden="true" />
             新增会话
@@ -209,7 +246,7 @@ export function ChatPage() {
             />
           </label>
         </div>
-        <div className="max-h-[34dvh] overflow-y-auto p-2 app-scrollbar xl:max-h-[calc(100dvh-15rem)]">
+        <div className="h-[calc(100%-8.5rem)] overflow-y-auto p-2 app-scrollbar">
           {filteredSessions.length ? (
             filteredSessions.map((session) => (
               <div
@@ -234,16 +271,27 @@ export function ChatPage() {
         </div>
       </aside>
 
-      <section className="flex min-h-[calc(100dvh-7rem)] flex-col">
-        <header className="flex items-center justify-between gap-3 border-b px-5 py-4">
-          <div>
-            <h1 className="text-lg font-semibold">{activeSession?.title ?? "新会话"}</h1>
-            <p className="mt-1 text-sm text-muted-foreground">支持普通模型对话和 RAG 检索增强对话</p>
+      <section className="flex min-h-0 flex-col">
+        <header className="flex min-h-[56px] items-center justify-between gap-3 border-b px-4 py-2">
+          <div className="flex min-w-0 items-center gap-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              type="button"
+              aria-label={sidebarOpen ? "隐藏会话侧边栏" : "显示会话侧边栏"}
+              onClick={() => setSidebarOpen((open) => !open)}
+            >
+              {sidebarOpen ? <PanelLeftClose className="h-4 w-4" aria-hidden="true" /> : <PanelLeftOpen className="h-4 w-4" aria-hidden="true" />}
+            </Button>
+            <div className="min-w-0">
+              <h1 className="truncate text-lg font-semibold">{activeSession?.title ?? "新会话"}</h1>
+              <p className="mt-1 truncate text-sm text-muted-foreground">支持普通模型对话和 RAG 检索增强对话</p>
+            </div>
           </div>
           <Badge variant={mode === "rag" ? "default" : "outline"}>{mode === "rag" ? "RAG" : "LLM"}</Badge>
         </header>
 
-        <div className="flex-1 overflow-y-auto bg-background px-4 py-6 app-scrollbar">
+        <div className="min-h-0 flex-1 overflow-y-auto bg-background px-4 py-5 app-scrollbar">
           <div className="mx-auto max-w-3xl space-y-5">
             {activeSession?.messages.length ? (
               activeSession.messages.map((message) => <MessageBubble key={message.id} message={message} />)
@@ -268,12 +316,14 @@ export function ChatPage() {
           </div>
         </div>
 
-        <form className="border-t bg-surface p-4" onSubmit={onSubmit}>
-          <div className="mx-auto max-w-3xl rounded-lg border bg-background p-3 shadow-sm">
+        <form className="border-t bg-surface p-3" onSubmit={onSubmit}>
+          <div className="mx-auto max-w-3xl rounded-lg border bg-background p-2 shadow-sm">
             <Textarea
-              className="min-h-20 border-0 bg-transparent shadow-none focus-visible:ring-0"
+              ref={inputRef}
+              rows={1}
+              className="max-h-36 min-h-6 resize-none border-0 bg-transparent px-2 py-1.5 leading-6 shadow-none focus-visible:ring-0 app-scrollbar"
               value={input}
-              onChange={(event) => setInput(event.target.value)}
+              onChange={onInputChange}
               placeholder={mode === "rag" ? "向知识库提问..." : "输入消息..."}
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
@@ -282,7 +332,7 @@ export function ChatPage() {
                 }
               }}
             />
-            <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="mt-2 flex items-center justify-between gap-3">
               <div className="inline-flex rounded-md border bg-surface p-1">
                 <button
                   type="button"
@@ -320,7 +370,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
         </div>
       ) : null}
       <div className={cn("max-w-[82%] rounded-lg px-4 py-3 text-sm leading-6", isUser ? "bg-primary text-primary-foreground" : "border bg-surface")}>
-        <div className="whitespace-pre-wrap">{message.content}</div>
+        {isUser ? <div className="whitespace-pre-wrap">{message.content}</div> : <MarkdownContent content={message.content} />}
         {message.mode === "rag" && !isUser ? <Badge className="mt-3" variant="outline">RAG</Badge> : null}
         {message.references?.length ? (
           <div className="mt-3 space-y-2 border-t pt-3">
@@ -340,6 +390,198 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       ) : null}
     </article>
   );
+}
+
+function MarkdownContent({ content }: { content: string }) {
+  const blocks = useMemo(() => parseMarkdown(content), [content]);
+
+  return (
+    <div className="space-y-3 break-words text-sm leading-6">
+      {blocks.map((block, index) => {
+        if (block.type === "heading") {
+          const HeadingTag = block.level === 1 ? "h2" : block.level === 2 ? "h3" : "h4";
+          return (
+            <HeadingTag key={index} className="font-semibold leading-7 text-foreground">
+              {renderInlineMarkdown(block.content)}
+            </HeadingTag>
+          );
+        }
+        if (block.type === "ul") {
+          return (
+            <ul key={index} className="list-disc space-y-1 pl-5">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+              ))}
+            </ul>
+          );
+        }
+        if (block.type === "ol") {
+          return (
+            <ol key={index} className="list-decimal space-y-1 pl-5">
+              {block.items.map((item, itemIndex) => (
+                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+              ))}
+            </ol>
+          );
+        }
+        if (block.type === "quote") {
+          return (
+            <blockquote key={index} className="border-l-2 border-primary/40 pl-3 text-muted-foreground">
+              {renderInlineMarkdown(block.content)}
+            </blockquote>
+          );
+        }
+        if (block.type === "code") {
+          return (
+            <pre key={index} className="overflow-x-auto rounded-md bg-muted p-3 text-xs leading-5 app-scrollbar">
+              <code>{block.content}</code>
+            </pre>
+          );
+        }
+        return (
+          <p key={index} className="whitespace-pre-wrap">
+            {renderInlineMarkdown(block.content)}
+          </p>
+        );
+      })}
+    </div>
+  );
+}
+
+function parseMarkdown(content: string): MarkdownBlock[] {
+  const lines = content.replace(/\r\n/g, "\n").split("\n");
+  const blocks: MarkdownBlock[] = [];
+  let paragraph: string[] = [];
+  let codeLines: string[] | null = null;
+  let codeLanguage = "";
+  let listType: "ul" | "ol" | null = null;
+  let listItems: string[] = [];
+
+  function flushParagraph() {
+    if (paragraph.length) {
+      blocks.push({ type: "paragraph", content: paragraph.join("\n").trim() });
+      paragraph = [];
+    }
+  }
+
+  function flushList() {
+    if (listType && listItems.length) {
+      blocks.push({ type: listType, items: listItems });
+      listType = null;
+      listItems = [];
+    }
+  }
+
+  for (const line of lines) {
+    const fence = line.match(/^```(\w+)?\s*$/);
+    if (fence) {
+      if (codeLines) {
+        blocks.push({ type: "code", language: codeLanguage, content: codeLines.join("\n") });
+        codeLines = null;
+        codeLanguage = "";
+      } else {
+        flushParagraph();
+        flushList();
+        codeLines = [];
+        codeLanguage = fence[1] ?? "";
+      }
+      continue;
+    }
+
+    if (codeLines) {
+      codeLines.push(line);
+      continue;
+    }
+
+    if (!line.trim()) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = line.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      blocks.push({ type: "heading", level: heading[1].length as 1 | 2 | 3, content: heading[2].trim() });
+      continue;
+    }
+
+    const unordered = line.match(/^\s*[-*]\s+(.+)$/);
+    if (unordered) {
+      flushParagraph();
+      if (listType !== "ul") {
+        flushList();
+        listType = "ul";
+      }
+      listItems.push(unordered[1].trim());
+      continue;
+    }
+
+    const ordered = line.match(/^\s*\d+\.\s+(.+)$/);
+    if (ordered) {
+      flushParagraph();
+      if (listType !== "ol") {
+        flushList();
+        listType = "ol";
+      }
+      listItems.push(ordered[1].trim());
+      continue;
+    }
+
+    const quote = line.match(/^>\s?(.+)$/);
+    if (quote) {
+      flushParagraph();
+      flushList();
+      blocks.push({ type: "quote", content: quote[1].trim() });
+      continue;
+    }
+
+    flushList();
+    paragraph.push(line);
+  }
+
+  if (codeLines) {
+    blocks.push({ type: "code", language: codeLanguage, content: codeLines.join("\n") });
+  }
+  flushParagraph();
+  flushList();
+
+  return blocks.length ? blocks : [{ type: "paragraph", content }];
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  const nodes: ReactNode[] = [];
+  const pattern = /(`[^`]+`|\*\*[^*]+\*\*)/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text))) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    const token = match[0];
+    if (token.startsWith("`")) {
+      nodes.push(
+        <code key={`${match.index}-code`} className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+          {token.slice(1, -1)}
+        </code>
+      );
+    } else {
+      nodes.push(
+        <strong key={`${match.index}-strong`} className="font-semibold">
+          {token.slice(2, -2)}
+        </strong>
+      );
+    }
+    lastIndex = pattern.lastIndex;
+  }
+
+  if (lastIndex < text.length) {
+    nodes.push(text.slice(lastIndex));
+  }
+
+  return nodes;
 }
 
 function loadSessions(): ChatSession[] {
