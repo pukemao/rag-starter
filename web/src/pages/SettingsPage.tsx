@@ -1,4 +1,4 @@
-import { ArrowLeft, ImagePlus, Settings, Trash2 } from "lucide-react";
+import { ArrowLeft, ImagePlus, Palette, Settings, Trash2 } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type ChangeEvent } from "react";
 import { Link } from "react-router-dom";
 
@@ -7,10 +7,15 @@ import { Label } from "@/components/ui/label";
 import { clampOpacity, loadUserPreferences, saveUserPreferences, type UserPreferences } from "@/lib/userPreferences";
 import { cn } from "@/lib/utils";
 
-const settingsItems = [{ id: "config", label: "配置", icon: Settings }];
+type SettingsItemId = "config" | "personalization";
+
+const settingsItems: Array<{ id: SettingsItemId; label: string; icon: typeof Settings }> = [
+  { id: "config", label: "配置", icon: Settings },
+  { id: "personalization", label: "个性化", icon: Palette }
+];
 
 export function SettingsPage() {
-  const [activeItem, setActiveItem] = useState("config");
+  const [activeItem, setActiveItem] = useState<SettingsItemId>("config");
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -78,7 +83,7 @@ export function SettingsPage() {
         <div className="mx-auto max-w-4xl space-y-6">
           <header>
             <h1 className="text-2xl font-semibold">设置</h1>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">调整对话页的 RAG 显示和个性化背景。</p>
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">调整对话页的 RAG 显示和个性化体验。</p>
           </header>
 
           {activeItem === "config" ? (
@@ -109,7 +114,11 @@ export function SettingsPage() {
                   </button>
                 </div>
               </section>
+            </div>
+          ) : null}
 
+          {activeItem === "personalization" ? (
+            <div className="space-y-5">
               <section className="rounded-lg border bg-background p-4">
                 <div className="flex flex-col gap-5 lg:grid lg:grid-cols-[minmax(0,1fr)_280px]">
                   <div className="space-y-5">

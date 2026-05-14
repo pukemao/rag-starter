@@ -64,9 +64,9 @@ describe("App", () => {
     fetchMock.mockClear();
   });
 
-  it("renders knowledge base page by default", async () => {
+  it("renders status page by default", async () => {
     renderApp();
-    expect(await screen.findByRole("heading", { name: "知识库" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "知识库工作台" })).toBeInTheDocument();
   });
 
   it("renders user chat route", () => {
@@ -91,6 +91,7 @@ describe("App", () => {
 
     expect(screen.getByRole("heading", { name: "设置" })).toBeInTheDocument();
     expect(screen.getByRole("switch", { name: "切换 RAG 参考段落显示" })).toHaveAttribute("aria-checked", "true");
+    await userEvent.click(screen.getByRole("button", { name: "个性化" }));
     expect(screen.getByRole("button", { name: "上传图片" })).toBeInTheDocument();
   });
 

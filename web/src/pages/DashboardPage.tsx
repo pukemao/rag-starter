@@ -20,7 +20,7 @@ export function DashboardPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-normal">知识库工作台</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-muted-foreground">
-          管理本地知识库索引、相似度检索和 RAG 增强对话，前端直接连接当前 FastAPI 服务。
+          查看当前服务状态和默认 RAG 链路配置，前端直接连接当前 FastAPI 服务。
         </p>
       </div>
 
@@ -58,7 +58,7 @@ export function DashboardPage() {
         <Panel>
           <PanelHeader>
             <PanelTitle>默认链路</PanelTitle>
-            <PanelDescription>索引、检索、生成</PanelDescription>
+            <PanelDescription>知识库问答流程</PanelDescription>
           </PanelHeader>
           <PanelContent>
             <div className="space-y-2 text-sm text-muted-foreground">

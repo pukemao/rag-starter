@@ -1,17 +1,13 @@
-import { Activity, Database, FileStack, FileUp, MessageSquareText, Search, Settings, Trash2 } from "lucide-react";
+import { Activity, Database, FileStack, MessageSquareText, Settings } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
 import { cn } from "@/lib/utils";
 
 const navigation = [
-  { to: "/knowledge", label: "知识库", icon: FileStack },
   { to: "/status", label: "状态", icon: Activity },
-  { to: "/index", label: "索引", icon: FileUp },
-  { to: "/search", label: "检索", icon: Search },
   { to: "/chat", label: "对话", icon: MessageSquareText },
-  { to: "/rag-chat", label: "RAG 调试", icon: MessageSquareText },
-  { to: "/delete", label: "删除", icon: Trash2 }
+  { to: "/knowledge", label: "知识库", icon: FileStack }
 ];
 
 const mobileNavigation = [...navigation, { to: "/settings", label: "设置", icon: Settings }];
