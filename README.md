@@ -50,6 +50,11 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd pytho
 | `DEEPSEEK_TEMPERATURE` | `0.2` | 生成温度 |
 | `DEEPSEEK_MAX_TOKENS` | `1024` | 单次回答最大 token 数 |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `60.0` | LLM 请求超时时间 |
+| `RAG_DEFAULT_CITY` | `上海` | Agent 天气工具在用户未提供城市时使用的默认城市 |
+| `RAG_TIMEZONE` | `Asia/Shanghai` | 当前日期工具使用的系统时区 |
+| `RAG_WEATHER_GEOCODING_URL` | Open-Meteo geocoding | 天气工具城市编码接口 |
+| `RAG_WEATHER_FORECAST_URL` | Open-Meteo forecast | 天气工具天气预报接口 |
+| `RAG_WEATHER_TIMEOUT_SECONDS` | `10.0` | 天气工具请求超时时间 |
 
 本地开发可以在项目根目录创建 `.env`，项目启动时会自动读取：
 
@@ -144,7 +149,14 @@ print(result.used_rag)
 print(result.references)
 ```
 
-流程为：用户问题 -> Agent 执行器 -> 模型根据系统提示词和工具描述判断是否调用 `search_knowledge_base` -> 如需检索则调用 LangChain tool 查询本地 Chroma 知识库 -> 模型整合工具返回的参考段落和用户问题生成最终回答。`search_knowledge_base` 的工具描述通过 `@tool("search_knowledge_base", description=...)` 显式声明，描述中包含工具能力、适合调用场景、不应调用场景、参数说明和结果输出说明。后续新增工具统一在 `src/agent/tools.py` 注册。
+流程为：用户问题 -> Agent 执行器 -> 模型根据系统提示词和工具描述判断是否调用工具 -> 如需检索则调用 `search_knowledge_base` 查询本地 Chroma 知识库；如需天气则调用 `query_weather`，必要时先调用 `get_current_date` 或 `get_current_location_city` 补齐日期和默认城市 -> 模型整合工具结果和用户问题生成最终回答。工具描述通过 `@tool("tool_name", description=...)` 显式声明，描述中包含工具能力、适合调用场景、不应调用场景、参数说明和结果输出说明。后续新增工具统一在 `src/agent/tools.py` 注册。
+
+当前 Agent 工具：
+
+- `search_knowledge_base(query, k=2)`：检索本地知识库段落。
+- `get_current_date()`：返回 `RAG_TIMEZONE` 下的当前日期，用于把“今天、明天、后天”等相对日期换算为明确日期。
+- `get_current_location_city()`：返回 `RAG_DEFAULT_CITY` 配置的默认城市。它不是浏览器定位，也不会通过服务器 IP 猜测用户真实位置。
+- `query_weather(city, date)`：查询指定城市和 `YYYY-MM-DD` 日期的天气预报，返回天气概况、气温、降水概率和风速；默认使用 Open-Meteo 公开接口，无需 API Key。
 
 DeepSeek V4 thinking mode 与工具调用同时使用时，工具调用后的下一次请求必须把上一轮 assistant 消息中的 `reasoning_content`、`tool_calls` 等原始字段完整回传。项目内置 `DeepSeekToolCallingAgentExecutor` 直接使用 OpenAI 兼容接口执行工具调用循环，保留原始 assistant payload，再追加 tool 结果继续请求，因此不需要关闭 thinking mode。非 DeepSeek 提供方仍可回退到 LangChain `create_agent`。
 

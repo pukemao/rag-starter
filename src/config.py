@@ -7,7 +7,9 @@ arguments, but their default values should be sourced from this file.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import datetime
 from os import getenv
+from zoneinfo import ZoneInfo
 
 from dotenv import load_dotenv
 
@@ -103,6 +105,18 @@ class LlmSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class WeatherSettings:
+    default_city: str = getenv("RAG_DEFAULT_CITY", "上海")
+    timezone: str = getenv("RAG_TIMEZONE", "Asia/Shanghai")
+    geocoding_url: str = getenv("RAG_WEATHER_GEOCODING_URL", "https://geocoding-api.open-meteo.com/v1/search")
+    forecast_url: str = getenv("RAG_WEATHER_FORECAST_URL", "https://api.open-meteo.com/v1/forecast")
+    timeout_seconds: float = _get_float("RAG_WEATHER_TIMEOUT_SECONDS", 10.0)
+
+    def today(self) -> str:
+        return datetime.now(ZoneInfo(self.timezone)).date().isoformat()
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     api: ApiSettings = ApiSettings()
     splitter: SplitterSettings = SplitterSettings()
@@ -111,6 +125,7 @@ class AppSettings:
     database: DatabaseSettings = DatabaseSettings()
     rag: RagSettings = RagSettings()
     llm: LlmSettings = LlmSettings()
+    weather: WeatherSettings = WeatherSettings()
 
 
 settings = AppSettings()

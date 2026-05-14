@@ -78,6 +78,8 @@ class DeepSeekAgentExecutorTests(unittest.TestCase):
             result = executor.invoke({"messages": [SimpleNamespace(type="human", content="项目背景是什么？")]})
 
         self.assertEqual(result["messages"][0].content, "最终回答")
+        self.assertEqual(FakeOpenAI.completions.requests[0]["tools"][0]["function"]["name"], "search_knowledge_base")
+        self.assertIn("parameters", FakeOpenAI.completions.requests[0]["tools"][0]["function"])
         second_messages = FakeOpenAI.completions.requests[1]["messages"]
         assistant_payload = next(message for message in second_messages if message.get("reasoning_content") == "需要查询知识库")
         tool_payload = next(message for message in second_messages if message.get("role") == "tool")
