@@ -40,7 +40,8 @@ class DeepSeekToolCallingAgentExecutor:
         messages.extend(self._convert_messages(input.get("messages", [])))
 
         final_message: dict[str, Any] | None = None
-        for _ in range(self.max_iterations):
+        response: Any | None = None
+        for iteration in range(self.max_iterations):
             response = self._chat(messages)
             choice = response.choices[0]
             assistant_message = choice.message
@@ -52,18 +53,30 @@ class DeepSeekToolCallingAgentExecutor:
             if not tool_calls:
                 break
 
+            if iteration == self.max_iterations - 1:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": "你已经达到工具调用上限。请停止调用工具，直接根据以上工具结果给出最终中文回答；如果信息不足，请说明缺少哪些信息。",
+                    }
+                )
+                response = self._chat(messages, include_tools=False)
+                final_message = self._assistant_payload(response.choices[0].message)
+                messages.append(final_message)
+                break
+
             for tool_call in tool_calls:
                 messages.append(self._run_tool_call(tool_call))
-        else:
-            raise RuntimeError("Agent 工具调用超过最大轮数")
 
-        content = "" if final_message is None else str(final_message.get("content") or "")
+        content = "" if final_message is None else str(final_message.get("content") or "").strip()
+        if not content:
+            content = self._fallback_answer(messages)
         return {
             "messages": [
                 AIMessage(
                     content=content,
                     response_metadata={
-                        "model_name": getattr(response, "model", self.llm_client.model),
+                        "model_name": getattr(response, "model", self.llm_client.model) if response is not None else self.llm_client.model,
                         "token_usage": self._usage(response),
                     },
                 )
@@ -71,7 +84,7 @@ class DeepSeekToolCallingAgentExecutor:
             "raw_messages": messages,
         }
 
-    def _chat(self, messages: list[dict[str, Any]]) -> Any:
+    def _chat(self, messages: list[dict[str, Any]], *, include_tools: bool = True) -> Any:
         if not self.llm_client.api_key:
             raise LLMConfigurationError("缺少 DeepSeek API Key，请设置 DEEPSEEK_API_KEY")
 
@@ -82,13 +95,15 @@ class DeepSeekToolCallingAgentExecutor:
 
         client = OpenAI(api_key=self.llm_client.api_key, base_url=self.llm_client.base_url)
         request_messages = [dict(message) for message in messages]
-        return client.chat.completions.create(
-            model=self.llm_client.model,
-            messages=request_messages,
-            tools=[self._tool_schema(tool) for tool in self.tools.values()],
-            temperature=self.llm_client.temperature,
-            max_tokens=self.llm_client.max_tokens,
-        )
+        kwargs: dict[str, Any] = {
+            "model": self.llm_client.model,
+            "messages": request_messages,
+            "temperature": self.llm_client.temperature,
+            "max_tokens": self.llm_client.max_tokens,
+        }
+        if include_tools:
+            kwargs["tools"] = [self._tool_schema(tool) for tool in self.tools.values()]
+        return client.chat.completions.create(**kwargs)
 
     @staticmethod
     def _convert_messages(messages: list[Any]) -> list[dict[str, str]]:
@@ -152,6 +167,8 @@ class DeepSeekToolCallingAgentExecutor:
 
     @staticmethod
     def _usage(response: Any) -> dict[str, Any]:
+        if response is None:
+            return {}
         usage = getattr(response, "usage", None)
         if usage is None:
             return {}
@@ -160,3 +177,11 @@ class DeepSeekToolCallingAgentExecutor:
         if isinstance(usage, dict):
             return dict(usage)
         return {}
+
+    @staticmethod
+    def _fallback_answer(messages: list[dict[str, Any]]) -> str:
+        tool_contents = [str(message.get("content") or "").strip() for message in messages if message.get("role") == "tool" and str(message.get("content") or "").strip()]
+        if tool_contents:
+            latest = tool_contents[-1]
+            return f"工具调用已达到上限，未能继续生成完整回答。最近一次工具结果如下：\n\n{latest}"
+        return "工具调用已达到上限，未能生成完整回答。请补充更明确的需求后重试。"

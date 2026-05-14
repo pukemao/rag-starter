@@ -113,6 +113,57 @@ class FakeInvalidToolOpenAI:
         self.chat = SimpleNamespace(completions=self.completions)
 
 
+class FakeLoopingToolCompletions:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def create(self, **kwargs):
+        self.requests.append(kwargs)
+        if "tools" not in kwargs:
+            return SimpleNamespace(
+                model="deepseek-test",
+                usage=SimpleNamespace(model_dump=lambda exclude_none=True: {"total_tokens": 10}),
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(
+                            model_dump=lambda exclude_none=True: {
+                                "role": "assistant",
+                                "content": "已根据工具结果给出最终回答。",
+                            }
+                        )
+                    )
+                ],
+            )
+        return SimpleNamespace(
+            model="deepseek-test",
+            usage=SimpleNamespace(model_dump=lambda exclude_none=True: {"total_tokens": 3}),
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        model_dump=lambda exclude_none=True: {
+                            "role": "assistant",
+                            "content": "",
+                            "tool_calls": [
+                                {
+                                    "id": f"call-{len(self.requests)}",
+                                    "type": "function",
+                                    "function": {"name": "loop_tool", "arguments": "{}"},
+                                }
+                            ],
+                        }
+                    )
+                )
+            ],
+        )
+
+
+class FakeLoopingToolOpenAI:
+    completions = FakeLoopingToolCompletions()
+
+    def __init__(self, **kwargs):
+        self.chat = SimpleNamespace(completions=self.completions)
+
+
 class DeepSeekAgentExecutorTests(unittest.TestCase):
     def test_preserves_reasoning_content_when_sending_tool_result(self):
         @tool("search_knowledge_base", description="检索知识库")
@@ -161,6 +212,27 @@ class DeepSeekAgentExecutorTests(unittest.TestCase):
         tool_payload = next(message for message in second_messages if message.get("role") == "tool")
         self.assertIn("调用参数无效", tool_payload["content"])
         self.assertIn("strict_tool", tool_payload["content"])
+
+    def test_forces_final_answer_when_tool_iterations_reach_limit(self):
+        @tool("loop_tool", description="循环工具")
+        def loop_tool() -> str:
+            return "工具结果"
+
+        executor = DeepSeekToolCallingAgentExecutor(
+            llm_client=DeepSeekClient(api_key="sk-test", model="deepseek-test", chat_model=object()),
+            tools=[loop_tool],
+            system_prompt="系统提示词",
+            max_iterations=2,
+        )
+
+        FakeLoopingToolOpenAI.completions = FakeLoopingToolCompletions()
+        with patch.dict("sys.modules", {"openai": SimpleNamespace(OpenAI=FakeLoopingToolOpenAI)}):
+            result = executor.invoke({"messages": [SimpleNamespace(type="human", content="请连续调用工具")]})
+
+        self.assertEqual(result["messages"][0].content, "已根据工具结果给出最终回答。")
+        self.assertEqual(len(FakeLoopingToolOpenAI.completions.requests), 3)
+        self.assertNotIn("tools", FakeLoopingToolOpenAI.completions.requests[-1])
+        self.assertTrue(any(message.get("role") == "system" and "停止调用工具" in message.get("content", "") for message in result["raw_messages"]))
 
 
 if __name__ == "__main__":
