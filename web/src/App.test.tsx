@@ -14,6 +14,7 @@ let mockSettings = {
   updated_at: now
 };
 let mockSessions: unknown[] = [];
+let writeTextMock: ReturnType<typeof vi.fn>;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
@@ -156,6 +157,11 @@ describe("App", () => {
       updated_at: now
     };
     mockSessions = [];
+    writeTextMock = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, "clipboard", {
+      value: { writeText: writeTextMock },
+      configurable: true
+    });
     fetchMock.mockClear();
   });
 
@@ -180,6 +186,20 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "回答标题" })).toBeInTheDocument();
     expect(screen.getByText("第一条")).toBeInTheDocument();
     expect(screen.getByText("print('ok')")).toBeInTheDocument();
+  });
+
+  it("copies user question and assistant answer in chat route", async () => {
+    renderApp("/chat");
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "复制测试");
+    await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
+    await screen.findByRole("heading", { name: "回答标题" });
+
+    const copyButtons = screen.getAllByRole("button", { name: "复制消息" });
+    await userEvent.click(copyButtons[0]);
+    expect(writeTextMock).toHaveBeenCalledWith("复制测试");
+
+    await userEvent.click(copyButtons[1]);
+    expect(writeTextMock).toHaveBeenLastCalledWith("## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```");
   });
 
   it("does not persist session when creating a new chat only", async () => {

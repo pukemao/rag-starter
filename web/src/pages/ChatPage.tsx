@@ -1,5 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
+import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Copy, Check } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
@@ -443,6 +443,35 @@ export function ChatPage() {
 
 function MessageBubble({ message, showRagReferences }: { message: ChatMessage; showRagReferences: boolean }) {
   const isUser = message.role === "user";
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const resetTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (resetTimerRef.current) {
+        window.clearTimeout(resetTimerRef.current);
+      }
+    };
+  }, []);
+
+  async function onCopy() {
+    if (resetTimerRef.current) {
+      window.clearTimeout(resetTimerRef.current);
+    }
+    try {
+      await copyTextToClipboard(message.content);
+      setCopyState("copied");
+    } catch {
+      setCopyState("failed");
+    }
+    resetTimerRef.current = window.setTimeout(() => {
+      setCopyState("idle");
+      resetTimerRef.current = null;
+    }, 1400);
+  }
+
+  const copyLabel = copyState === "copied" ? "已复制" : copyState === "failed" ? "复制失败" : "复制消息";
+
   return (
     <article className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
       {!isUser ? (
@@ -450,19 +479,36 @@ function MessageBubble({ message, showRagReferences }: { message: ChatMessage; s
           <Bot className="h-4 w-4" aria-hidden="true" />
         </div>
       ) : null}
-      <div className={cn("max-w-[82%] rounded-lg px-4 py-3 text-sm leading-6", isUser ? "bg-primary text-primary-foreground" : "border bg-surface")}>
-        {isUser ? <div className="whitespace-pre-wrap">{message.content}</div> : <MarkdownContent content={message.content} />}
-        {message.mode === "rag" && !isUser ? <Badge className="mt-3" variant="outline">RAG</Badge> : null}
-        {showRagReferences && message.references?.length ? (
-          <div className="mt-3 space-y-2 border-t pt-3">
-            {message.references.map((reference) => (
-              <details key={reference.index} className="text-xs text-muted-foreground">
-                <summary className="cursor-pointer font-medium">参考段落 {reference.index}</summary>
-                <p className="mt-1 whitespace-pre-wrap">{reference.page_content}</p>
-              </details>
-            ))}
-          </div>
-        ) : null}
+      <div className={cn("flex max-w-[82%] flex-col", isUser ? "items-end" : "items-start")}>
+        <div className={cn("rounded-lg px-4 py-3 text-sm leading-6", isUser ? "bg-primary text-primary-foreground" : "border bg-surface")}>
+          {isUser ? <div className="whitespace-pre-wrap">{message.content}</div> : <MarkdownContent content={message.content} />}
+          {message.mode === "rag" && !isUser ? (
+            <Badge className="mt-3" variant="outline">
+              RAG
+            </Badge>
+          ) : null}
+          {showRagReferences && message.references?.length ? (
+            <div className="mt-3 space-y-2 border-t pt-3">
+              {message.references.map((reference) => (
+                <details key={reference.index} className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer font-medium">参考段落 {reference.index}</summary>
+                  <p className="mt-1 whitespace-pre-wrap">{reference.page_content}</p>
+                </details>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <div className={cn("mt-1 flex", isUser ? "justify-end" : "justify-start")}>
+          <button
+            type="button"
+            className="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            aria-label={copyLabel}
+            title={copyLabel}
+            onClick={onCopy}
+          >
+            {copyState === "copied" ? <Check className="h-4 w-4" aria-hidden="true" /> : <Copy className="h-4 w-4" aria-hidden="true" />}
+          </button>
+        </div>
       </div>
       {isUser ? (
         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
@@ -471,6 +517,32 @@ function MessageBubble({ message, showRagReferences }: { message: ChatMessage; s
       ) : null}
     </article>
   );
+}
+
+async function copyTextToClipboard(text: string) {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return;
+    } catch {
+      // Fall back to a temporary textarea for browsers that expose the API but reject in the current context.
+    }
+  }
+
+  const textarea = document.createElement("textarea");
+  textarea.value = text;
+  textarea.setAttribute("readonly", "");
+  textarea.style.position = "fixed";
+  textarea.style.left = "-9999px";
+  textarea.style.top = "0";
+  document.body.appendChild(textarea);
+  textarea.select();
+  const copied = document.execCommand("copy");
+  document.body.removeChild(textarea);
+
+  if (!copied) {
+    throw new Error("copy failed");
+  }
 }
 
 function MarkdownContent({ content }: { content: string }) {
