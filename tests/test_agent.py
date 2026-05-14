@@ -142,6 +142,23 @@ class AgentToolTests(unittest.TestCase):
         self.assertEqual(context.attachments[0]["file_id"], "doc123")
         self.assertEqual(context.attachments[0]["filename"], "报告.md")
 
+    def test_generate_document_tool_handles_missing_arguments(self):
+        context = AgentToolContext(references=[])
+        tools = {
+            tool.name: tool
+            for tool in create_agent_tools(
+                vector_service=FakeVectorService(),
+                context=context,
+                document_generator=FakeDocumentGenerator(),
+                default_k=2,
+            )
+        }
+
+        output = tools["generate_document"].invoke({})
+
+        self.assertIn("content 和 document_type 为必填参数", output)
+        self.assertEqual(context.attachments, [])
+
     def test_read_uploaded_document_tool_uses_context_file_ids(self):
         chat_files = FakeChatFileService()
         context = AgentToolContext(references=[], file_ids=["file123"])

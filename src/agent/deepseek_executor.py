@@ -7,6 +7,7 @@ from typing import Any
 
 from langchain_core.messages import AIMessage
 from langchain_core.tools import BaseTool
+from pydantic import ValidationError
 
 from src.config import settings
 from src.llm import DeepSeekClient, LLMConfigurationError
@@ -116,7 +117,10 @@ class DeepSeekToolCallingAgentExecutor:
         if tool is None:
             content = f"工具 {tool_name} 不存在。"
         else:
-            content = tool.invoke(self._parse_tool_arguments(function.get("arguments")))
+            try:
+                content = tool.invoke(self._parse_tool_arguments(function.get("arguments")))
+            except (ValidationError, ValueError, TypeError) as exc:
+                content = f"工具 {tool_name} 调用参数无效：{exc}。请根据工具描述补齐必要参数后重新调用。"
         return {
             "role": "tool",
             "tool_call_id": str(tool_call.get("id") or ""),

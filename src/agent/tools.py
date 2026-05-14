@@ -209,7 +209,12 @@ def create_agent_tools(
     active_document_generator = document_generator or DocumentGeneratorService()
 
     @tool("generate_document", description=GENERATE_DOCUMENT_DESCRIPTION)
-    def generate_document(content: str, document_type: str, filename: str = "") -> str:
+    def generate_document(content: str = "", document_type: str = "", filename: str = "") -> str:
+        if not content.strip() or not document_type.strip():
+            return (
+                "文档生成失败：content 和 document_type 为必填参数。"
+                "请先根据用户需求整理完整文档内容，并指定文档类型 markdown、word、excel 或 pdf 后重新调用。"
+            )
         try:
             attachment = active_document_generator.generate(
                 content=content,
