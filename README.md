@@ -46,7 +46,8 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd pytho
 | `RAG_LLM_PROVIDER` | `deepseek` | 默认 LLM 提供方 |
 | `DEEPSEEK_API_KEY` | 空 | DeepSeek API Key，调用 `/rag/chat` 时必填 |
 | `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek OpenAI 兼容接口地址 |
-| `DEEPSEEK_MODEL` | `deepseek-v4-flash` | DeepSeek 对话模型 |
+| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | DeepSeek 对话模型 |
+| `DEEPSEEK_THINKING_TYPE` | `disabled` | DeepSeek V4 thinking mode 开关；Agent/tool 调用链路默认关闭，避免 `reasoning_content` 回传协议导致 400 |
 | `DEEPSEEK_TEMPERATURE` | `0.2` | 生成温度 |
 | `DEEPSEEK_MAX_TOKENS` | `1024` | 单次回答最大 token 数 |
 | `DEEPSEEK_TIMEOUT_SECONDS` | `60.0` | LLM 请求超时时间 |
@@ -145,6 +146,8 @@ print(result.references)
 ```
 
 流程为：用户问题 -> LangChain `create_agent` -> 模型根据系统提示词和工具描述判断是否调用 `search_knowledge_base` -> 如需检索则调用 LangChain tool 查询本地 Chroma 知识库 -> 模型整合工具返回的参考段落和用户问题生成最终回答。`search_knowledge_base` 的工具描述通过 `@tool("search_knowledge_base", description=...)` 显式声明，描述中包含工具能力、适合调用场景、不应调用场景、参数说明和结果输出说明。后续新增工具统一在 `src/agent/tools.py` 注册。
+
+DeepSeek V4 默认可能启用 thinking mode。工具调用链路下，如果客户端没有完整回传 `reasoning_content`，DeepSeek 会返回 `400`。本项目默认通过 `DEEPSEEK_THINKING_TYPE=disabled` 显式关闭 thinking mode，以保证 LangChain Agent/tool calling 链路稳定运行。
 
 索引入库前会执行文件内 chunk 去重：同一个文件切出的重复 chunk 只写入一次；不同文件里的相同 chunk 会分别保留，方便后续删除某个上传文件时只删除该文件对应的数据。
 

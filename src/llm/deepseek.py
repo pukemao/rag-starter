@@ -32,6 +32,7 @@ class DeepSeekClient:
         api_key: str | None = None,
         base_url: str = settings.llm.base_url,
         model: str = settings.llm.model,
+        thinking_type: str = settings.llm.thinking_type,
         temperature: float = settings.llm.temperature,
         max_tokens: int = settings.llm.max_tokens,
         timeout: float = settings.llm.timeout_seconds,
@@ -40,6 +41,7 @@ class DeepSeekClient:
         self.api_key = api_key if api_key is not None else settings.llm.api_key
         self.base_url = base_url.rstrip("/")
         self.model = model
+        self.thinking_type = thinking_type
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.chat_model = chat_model or self._create_chat_model(timeout=timeout)
@@ -83,6 +85,10 @@ class DeepSeekClient:
         except ImportError as exc:
             raise LLMConfigurationError("无法导入 langchain_openai。请安装依赖: pip install langchain-openai") from exc
 
+        extra_body: dict[str, Any] = {}
+        if self.thinking_type:
+            extra_body["thinking"] = {"type": self.thinking_type}
+
         return ChatOpenAI(
             model=self.model,
             api_key=self.api_key,
@@ -90,6 +96,7 @@ class DeepSeekClient:
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             timeout=timeout,
+            extra_body=extra_body or None,
         )
 
     @staticmethod
