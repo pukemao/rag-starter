@@ -10,7 +10,7 @@
 pip install langchain-community langchain-core
 pip install langchain-text-splitters
 pip install langchain-chroma chromadb fastapi uvicorn python-multipart
-pip install langchain-openai
+pip install langchain langchain-openai
 ```
 
 不同格式会需要额外依赖。建议在需要覆盖办公文档、图片 OCR、EPUB 等格式时安装：
@@ -132,6 +132,20 @@ print(result.references)
 
 流程为：用户问题 -> LangChain embedding -> LangChain Chroma 相似度检索 -> 返回 top-k 知识库段落 -> 将用户问题和参考段落整合为最终 prompt -> LangChain ChatOpenAI 兼容方式调用 DeepSeek LLM -> 返回自然回答、prompt 和引用段落。
 
+Agent 智能对话链路：
+
+```python
+from src.agent import AgentChatService
+
+service = AgentChatService()
+result = service.answer("根据我上传的简历总结项目经历", k=2)
+print(result.answer)
+print(result.used_rag)
+print(result.references)
+```
+
+流程为：用户问题 -> LangChain `create_agent` -> 模型根据系统提示词和工具描述判断是否调用 `search_knowledge_base` -> 如需检索则调用 LangChain tool 查询本地 Chroma 知识库 -> 模型整合工具返回的参考段落和用户问题生成最终回答。`search_knowledge_base` 的工具描述通过 `@tool("search_knowledge_base", description=...)` 显式声明，描述中包含工具能力、适合调用场景、不应调用场景、参数说明和结果输出说明。后续新增工具统一在 `src/agent/tools.py` 注册。
+
 索引入库前会执行文件内 chunk 去重：同一个文件切出的重复 chunk 只写入一次；不同文件里的相同 chunk 会分别保留，方便后续删除某个上传文件时只删除该文件对应的数据。
 
 上传索引会先计算文件内容 SHA-256，并检查向量库 metadata 中是否已存在相同 `file_hash`。重复文件不会入库，接口返回 `409`，响应体中包含 `message`、`filename` 和 `file_hash`。
@@ -163,6 +177,7 @@ uvicorn src.api.main:app --reload
 - `POST /search`: 相似度检索
 - `POST /chat`: 普通大模型对话，支持传入历史上下文
 - `POST /rag/chat`: RAG 增强对话，基于本地知识库检索结果调用 DeepSeek
+- `POST /agent/chat`: Agent 智能对话，由模型自动判断是否调用知识库检索工具
 - `GET /chat/sessions`: 列出本地持久化会话
 - `GET /chat/sessions/{session_id}`: 获取会话和消息详情
 - `DELETE /chat/sessions/{session_id}`: 删除会话和消息
@@ -210,9 +225,15 @@ curl -X POST http://127.0.0.1:8000/chat \
 curl -X POST http://127.0.0.1:8000/rag/chat \
   -H "Content-Type: application/json" \
   -d '{"question":"项目背景是什么？","k":3,"history":[]}'
+
+curl -X POST http://127.0.0.1:8000/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"根据知识库总结项目背景","k":2,"history":[]}'
 ```
 
 `POST /rag/chat` 响应包含 `answer`、`question`、实际发送给 LLM 的 `prompt`、`references`、`model` 和 `usage`。如果没有配置 `DEEPSEEK_API_KEY`，接口会返回 `500` 并提示设置环境变量。
+
+`POST /agent/chat` 响应包含 `answer`、`question`、`prompt`、`used_rag`、`references`、`model`、`usage` 和持久化后的 `session`。`used_rag=true` 表示本轮 Agent 调用了知识库工具；`used_rag=false` 表示模型判断无需检索，直接完成普通对话。
 
 ## 前端 Web
 
@@ -241,7 +262,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 当前页面包含：
 
 - 状态：查看 FastAPI `/health` 状态、后端地址和当前默认 RAG 链路
-- 对话：用户端模型对话页，支持新增会话、搜索会话、本地存储会话、删除会话、上下文记忆；输入框可切换 `LLM` 与 `RAG` 模式；模型回答按 Markdown 展示；可读取用户设置决定是否显示 RAG 参考段落和聊天背景
+- 对话：用户端 Agent 智能对话页，支持新增会话、搜索会话、本地存储会话、删除会话、上下文记忆；输入框不再要求用户手动选择 `LLM/RAG`，后端 Agent 会自动判断是否需要调用知识库检索工具；模型回答按 Markdown 展示；可读取用户设置决定是否显示 RAG 参考段落和聊天背景
 - 知识库：用户端知识库管理页，主页面展示文件列表；上传文件和查询知识库通过按钮弹出表单完成；上传支持拖拽和点击选择，可批量上传；查询结果在查询弹窗内展示；按文件操作优先使用 `source_id`
 - 设置：左下角设置入口进入用户设置页；设置页使用全浏览器工作区布局，包含“配置”和“个性化”设置项。“配置”用于控制 RAG 回答是否显示参考段落；“个性化”用于上传、预览、调整透明度和删除聊天背景图片；设置通过后端持久化到 SQLite
 

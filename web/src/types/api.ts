@@ -56,6 +56,17 @@ export type RagChatResponse = {
   session?: ChatSessionResponse | null;
 };
 
+export type AgentChatResponse = {
+  answer: string;
+  question: string;
+  prompt: string;
+  used_rag: boolean;
+  references: RagReference[];
+  model: string;
+  usage: Record<string, unknown>;
+  session?: ChatSessionResponse | null;
+};
+
 export type ChatMessageResponse = {
   id: string;
   role: "user" | "assistant";

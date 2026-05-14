@@ -1,4 +1,5 @@
 import type {
+  AgentChatResponse,
   ApiErrorPayload,
   ChatHistoryMessage,
   ChatResponse,
@@ -118,6 +119,18 @@ export function chatWithRag(input: {
   max_tokens?: number | null;
 }) {
   return requestJson<RagChatResponse>("/rag/chat", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function chatWithAgent(input: {
+  session_id?: string | null;
+  message: string;
+  k?: number;
+  history?: ChatHistoryMessage[];
+}) {
+  return requestJson<AgentChatResponse>("/agent/chat", {
     method: "POST",
     body: JSON.stringify(input)
   });

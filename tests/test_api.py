@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import patch
 
 from src.vector_store import KnowledgeFile
+from src.agent import AgentAnswer
 from src.rag import RagAnswer, RagReference
 from src.vector_store import IndexResult, SearchResult
 
@@ -79,6 +80,23 @@ class FakeRagService:
         )
 
 
+class FakeAgentService:
+    def __init__(self) -> None:
+        self.answer_requests = []
+
+    def answer(self, question, *, k=2, history=None):
+        self.answer_requests.append({"question": question, "k": k, "history": history})
+        return AgentAnswer(
+            answer="agent answer",
+            question=question,
+            prompt="agent prompt",
+            used_rag=True,
+            references=[RagReference(index=1, page_content="hello", metadata={"source": "a.txt"}, score=0.5)],
+            model="deepseek-test",
+            usage={"total_tokens": 9},
+        )
+
+
 class ApiTests(unittest.TestCase):
     def setUp(self):
         try:
@@ -91,8 +109,16 @@ class ApiTests(unittest.TestCase):
 
         self.service = FakeService()
         self.rag_service = FakeRagService()
+        self.agent_service = FakeAgentService()
         self.storage_service = StorageService(create_session_factory("sqlite:///:memory:"))
-        self.client = TestClient(create_app(service=self.service, rag_service=self.rag_service, storage_service=self.storage_service))
+        self.client = TestClient(
+            create_app(
+                service=self.service,
+                rag_service=self.rag_service,
+                agent_service=self.agent_service,
+                storage_service=self.storage_service,
+            )
+        )
 
     def test_health(self):
         response = self.client.get("/health")
@@ -278,6 +304,32 @@ class ApiTests(unittest.TestCase):
                 "system_prompt": None,
                 "temperature": 0.1,
                 "max_tokens": 128,
+            },
+        )
+
+    def test_agent_chat(self):
+        response = self.client.post(
+            "/agent/chat",
+            json={
+                "message": "根据知识库说明 hello",
+                "k": 2,
+                "history": [{"role": "user", "content": "前面聊到了 a.txt"}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["answer"], "agent answer")
+        self.assertTrue(response.json()["used_rag"])
+        self.assertEqual(response.json()["references"][0]["page_content"], "hello")
+        self.assertEqual(response.json()["session"]["messages"][0]["content"], "根据知识库说明 hello")
+        self.assertEqual(response.json()["session"]["messages"][1]["mode"], "rag")
+        self.assertEqual(response.json()["session"]["messages"][1]["references"][0]["page_content"], "hello")
+        self.assertEqual(
+            self.agent_service.answer_requests[0],
+            {
+                "question": "根据知识库说明 hello",
+                "k": 2,
+                "history": [{"role": "user", "content": "前面聊到了 a.txt"}],
             },
         )
 

@@ -32,6 +32,40 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
       headers: { "Content-Type": "application/json" }
     });
   }
+  if (url.endsWith("/agent/chat")) {
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    const message = String(body.message ?? "测试 markdown");
+    const isRag = message.includes("RAG");
+    return new Response(
+      JSON.stringify({
+        answer: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
+        question: message,
+        prompt: "agent prompt",
+        used_rag: isRag,
+        references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
+        model: "test",
+        usage: {},
+        session: {
+          id: isRag ? "rag-session" : "chat-session",
+          title: isRag ? "测试 RAG" : "测试 markdown",
+          created_at: now,
+          updated_at: now,
+          messages: [
+            { id: isRag ? "u-rag" : "u-chat", role: "user", content: message, mode: isRag ? "rag" : "normal", references: [], created_at: now },
+            {
+              id: isRag ? "a-rag" : "a-chat",
+              role: "assistant",
+              content: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
+              mode: isRag ? "rag" : "normal",
+              references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
+              created_at: now
+            }
+          ]
+        }
+      }),
+      { status: 200, headers: { "Content-Type": "application/json" } }
+    );
+  }
   if (url.endsWith("/rag/chat")) {
     return new Response(
       JSON.stringify({
@@ -165,7 +199,6 @@ describe("App", () => {
   it("uses settings to hide rag references in chat route", async () => {
     mockSettings.show_rag_references = false;
     renderApp("/chat");
-    await userEvent.selectOptions(screen.getByLabelText("选择对话模式"), "rag");
     await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "测试 RAG");
     await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
 

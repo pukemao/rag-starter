@@ -9,6 +9,7 @@ from uuid import uuid4
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
+from src.agent import AgentChatService
 from src.config import settings
 from src.llm import DeepSeekClient, LLMConfigurationError
 from src.rag import RagService
@@ -19,6 +20,8 @@ from src.vector_store import DuplicateFileError, VectorStoreService
 from .schemas import (
     AddDocumentRequest,
     AddDocumentResponse,
+    AgentChatRequest,
+    AgentChatResponse,
     ChatRequest,
     ChatResponse,
     ChatMessageResponse,
@@ -104,6 +107,7 @@ def _settings_response(user_settings: StoredUserSettings) -> UserSettingsRespons
 def create_app(
     service: VectorStoreService | None = None,
     rag_service: RagService | None = None,
+    agent_service: AgentChatService | None = None,
     storage_service: StorageService | None = None,
 ) -> FastAPI:
     """Create the FastAPI app.
@@ -122,6 +126,7 @@ def create_app(
     )
     vector_service = service or VectorStoreService()
     active_rag_service = rag_service or RagService(vector_service=vector_service)
+    active_agent_service = agent_service or AgentChatService(vector_service=vector_service)
     active_storage_service = storage_service or StorageService()
 
     def get_service() -> VectorStoreService:
@@ -129,6 +134,9 @@ def create_app(
 
     def get_rag_service() -> RagService:
         return active_rag_service
+
+    def get_agent_service() -> AgentChatService:
+        return active_agent_service
 
     def get_storage_service() -> StorageService:
         return active_storage_service
@@ -358,6 +366,57 @@ def create_app(
             answer=result.answer,
             question=result.question,
             prompt=result.prompt,
+            references=[
+                RagReferenceResponse(
+                    index=reference.index,
+                    page_content=reference.page_content,
+                    metadata=reference.metadata,
+                    score=reference.score,
+                )
+                for reference in result.references
+            ],
+            model=result.model,
+            usage=result.usage,
+            session=_session_response(session),
+        )
+
+    @app.post("/agent/chat", response_model=AgentChatResponse)
+    def agent_chat(
+        request: AgentChatRequest,
+        active_agent: AgentChatService = Depends(get_agent_service),
+        active_storage: StorageService = Depends(get_storage_service),
+    ) -> AgentChatResponse:
+        try:
+            result = active_agent.answer(
+                request.message,
+                k=request.k,
+                history=[{"role": item.role, "content": item.content} for item in request.history],
+            )
+            references = [
+                {
+                    "index": reference.index,
+                    "page_content": reference.page_content,
+                    "metadata": reference.metadata,
+                    "score": reference.score,
+                }
+                for reference in result.references
+            ]
+            session = active_storage.save_completed_turn(
+                session_id=request.session_id,
+                user_content=request.message,
+                assistant_content=result.answer,
+                mode="rag" if result.used_rag else "normal",
+                references=references,
+            )
+        except LLMConfigurationError as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        return AgentChatResponse(
+            answer=result.answer,
+            question=result.question,
+            prompt=result.prompt,
+            used_rag=result.used_rag,
             references=[
                 RagReferenceResponse(
                     index=reference.index,

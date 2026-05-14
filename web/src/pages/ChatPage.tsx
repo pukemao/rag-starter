@@ -1,12 +1,12 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen, Plus, ChevronDown } from "lucide-react";
+import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen, Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { chatWithModel, chatWithRag, deleteChatSession, getChatSession, getUserSettings, listChatSessions } from "@/lib/api";
+import { chatWithAgent, deleteChatSession, getChatSession, getUserSettings, listChatSessions } from "@/lib/api";
 import { cn } from "@/lib/utils";
 import type { ChatHistoryMessage, ChatSessionResponse, RagReference, UserSettingsResponse } from "@/types/api";
 
@@ -78,7 +78,6 @@ export function ChatPage() {
   const [activeSessionId, setActiveSessionId] = useState("");
   const [conversationSearch, setConversationSearch] = useState("");
   const [input, setInput] = useState("");
-  const [mode, setMode] = useState<ChatMode>("normal");
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [draftSession, setDraftSession] = useState<ChatSession | null>(null);
   const [pendingMessages, setPendingMessages] = useState<ChatMessage[]>([]);
@@ -119,38 +118,25 @@ export function ChatPage() {
     mutationFn: async ({
       message,
       history,
-      activeMode,
       sessionId
     }: {
       message: string;
       history: ChatHistoryMessage[];
-      activeMode: ChatMode;
       sessionId: string | null;
       session: ChatSession;
       userMessage: ChatMessage;
     }) => {
-      if (activeMode === "rag") {
-        return {
-          activeMode,
-          response: await chatWithRag({
-            session_id: sessionId,
-            question: message,
-            k: 2,
-            history
-          })
-        };
-      }
       return {
-        activeMode,
-        response: await chatWithModel({
+        response: await chatWithAgent({
           session_id: sessionId,
           message,
+          k: 2,
           history
         })
       };
     },
     onSuccess: ({ response }, variables) => {
-      const nextSession = response.session ? toChatSession(response.session) : completeLocalSession(variables.session, variables.userMessage, response.answer, variables.activeMode, "references" in response ? response.references : undefined);
+      const nextSession = response.session ? toChatSession(response.session) : completeLocalSession(variables.session, variables.userMessage, response.answer, response.used_rag ? "rag" : "normal", response.references);
       persistReturnedSession(nextSession);
     },
     onError: (error) => {
@@ -244,14 +230,13 @@ export function ChatPage() {
       id: crypto.randomUUID(),
       role: "user",
       content: message,
-      mode,
       createdAt: new Date().toISOString()
     };
     setDraftSession(session);
     setPendingMessages([userMessage]);
     setTransientError("");
     setInput("");
-    chatMutation.mutate({ message, history, activeMode: mode, session, userMessage, sessionId: activeSessionId || null });
+    chatMutation.mutate({ message, history, session, userMessage, sessionId: activeSessionId || null });
   }
 
   function onInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
@@ -371,10 +356,10 @@ export function ChatPage() {
             </Button>
             <div className="min-w-0">
               <h1 className="truncate text-lg font-semibold">{activeSession?.title ?? "新会话"}</h1>
-              <p className="mt-1 truncate text-sm text-muted-foreground">支持普通模型对话和 RAG 检索增强对话</p>
+              <p className="mt-1 truncate text-sm text-muted-foreground">智能判断是否需要检索本地知识库</p>
             </div>
           </div>
-          <Badge variant={mode === "rag" ? "default" : "outline"}>{mode === "rag" ? "RAG" : "LLM"}</Badge>
+          <Badge variant="outline">Agent</Badge>
         </header>
 
         <div className="relative min-h-0 flex-1 overflow-hidden bg-background">
@@ -398,7 +383,7 @@ export function ChatPage() {
                   </div>
                   <h2 className="mt-4 text-xl font-semibold">开始一次知识库对话</h2>
                   <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                    直接提问使用普通模型回答；开启 RAG 后，会先检索本地知识库，再生成增强回答。
+                    直接提问即可，系统会根据问题自动判断是否需要检索本地知识库。
                   </p>
                 </div>
               )}
@@ -426,7 +411,7 @@ export function ChatPage() {
               className="max-h-36 min-h-10 flex-1 resize-none border-0 bg-transparent px-0 py-2 text-base leading-6 shadow-none focus-visible:ring-0 app-scrollbar"
               value={input}
               onChange={onInputChange}
-              placeholder={mode === "rag" ? "向知识库提问..." : "有问题，尽管问"}
+              placeholder="有问题，尽管问"
               onKeyDown={(event) => {
                 if (event.key === "Enter" && !event.shiftKey) {
                   event.preventDefault();
@@ -435,19 +420,6 @@ export function ChatPage() {
               }}
             />
             <div className="flex shrink-0 items-center gap-2">
-              <label className="relative inline-flex h-10 items-center">
-                <span className="sr-only">选择对话模式</span>
-                <select
-                  className="h-10 appearance-none rounded-full border-0 bg-transparent pl-3 pr-8 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-muted focus-visible:bg-muted focus-visible:ring-2 focus-visible:ring-ring"
-                  value={mode}
-                  onChange={(event) => setMode(event.target.value as ChatMode)}
-                  aria-label="选择对话模式"
-                >
-                  <option value="normal">LLM</option>
-                  <option value="rag">RAG</option>
-                </select>
-                <ChevronDown className="pointer-events-none absolute right-2 h-4 w-4 text-muted-foreground" aria-hidden="true" />
-              </label>
               <Button type="submit" size="icon" className="h-12 w-12 rounded-full" disabled={!input.trim() || chatMutation.isPending} aria-label="发送消息">
                 {chatMutation.isPending ? <Loader2 className="h-5 w-5 animate-spin" aria-hidden="true" /> : <Send className="h-5 w-5" aria-hidden="true" />}
               </Button>

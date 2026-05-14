@@ -108,6 +108,13 @@ class RagChatRequest(BaseModel):
     max_tokens: int | None = Field(default=None, gt=0)
 
 
+class AgentChatRequest(BaseModel):
+    session_id: str | None = None
+    message: str = Field(..., min_length=1)
+    k: int = Field(default=settings.rag.default_top_k, gt=0)
+    history: list[ChatMessageRequest] = Field(default_factory=list)
+
+
 class RagReferenceResponse(BaseModel):
     index: int
     page_content: str
@@ -148,6 +155,17 @@ class RagChatResponse(BaseModel):
     answer: str
     question: str
     prompt: str
+    references: list[RagReferenceResponse]
+    model: str
+    usage: dict[str, Any] = Field(default_factory=dict)
+    session: ChatSessionResponse | None = None
+
+
+class AgentChatResponse(BaseModel):
+    answer: str
+    question: str
+    prompt: str
+    used_rag: bool
     references: list[RagReferenceResponse]
     model: str
     usage: dict[str, Any] = Field(default_factory=dict)
