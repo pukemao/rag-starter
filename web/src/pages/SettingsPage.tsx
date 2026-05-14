@@ -41,7 +41,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div className="grid min-h-[calc(100dvh-7rem)] overflow-hidden rounded-lg border bg-surface shadow-sm lg:grid-cols-[260px_minmax(0,1fr)]">
+    <div className="grid h-[calc(100dvh-10px)] overflow-hidden rounded-lg border bg-surface shadow-sm lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside className="border-b bg-muted/30 lg:border-b-0 lg:border-r">
         <div className="border-b p-3">
           <Button asChild variant="ghost" className="w-full justify-start">
@@ -93,15 +93,15 @@ export function SettingsPage() {
                     role="switch"
                     aria-checked={preferences.showRagReferences}
                     className={cn(
-                      "relative h-7 w-12 rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                      "inline-flex h-7 w-12 shrink-0 items-center rounded-full p-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
                       preferences.showRagReferences ? "bg-primary" : "bg-muted-foreground/30"
                     )}
                     onClick={() => updatePreference({ showRagReferences: !preferences.showRagReferences })}
                   >
                     <span
                       className={cn(
-                        "absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-transform",
-                        preferences.showRagReferences ? "translate-x-6" : "translate-x-1"
+                        "h-5 w-5 rounded-full bg-white shadow transition-transform",
+                        preferences.showRagReferences ? "translate-x-5" : "translate-x-0"
                       )}
                     />
                     <span className="sr-only">切换 RAG 参考段落显示</span>

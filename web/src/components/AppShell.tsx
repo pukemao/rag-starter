@@ -19,6 +19,7 @@ const mobileNavigation = [...navigation, { to: "/settings", label: "设置", ico
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const isChatRoute = location.pathname === "/chat";
+  const isFullBleedRoute = isChatRoute || location.pathname === "/settings";
 
   return (
     <div className="min-h-dvh bg-background">
@@ -108,7 +109,7 @@ export function AppShell({ children }: { children: ReactNode }) {
             </nav>
           </div>
         </header>
-        <main className={cn("mx-auto w-full", isChatRoute ? "max-w-none p-[5px]" : "max-w-7xl px-4 py-6 sm:px-6 lg:px-8")}>{children}</main>
+        <main className={cn("mx-auto w-full", isFullBleedRoute ? "max-w-none p-[5px]" : "max-w-7xl px-4 py-6 sm:px-6 lg:px-8")}>{children}</main>
       </div>
     </div>
   );
