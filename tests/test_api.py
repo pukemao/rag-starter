@@ -92,6 +92,17 @@ class FakeAgentService:
             prompt="agent prompt",
             used_rag=True,
             references=[RagReference(index=1, page_content="hello", metadata={"source": "a.txt"}, score=0.5)],
+            attachments=[
+                {
+                    "file_id": "doc123",
+                    "filename": "报告.md",
+                    "document_type": "markdown",
+                    "mime_type": "text/markdown; charset=utf-8",
+                    "download_url": "/generated-documents/doc123/download",
+                    "size": 12,
+                    "created_at": "2026-05-14T00:00:00+00:00",
+                }
+            ],
             model="deepseek-test",
             usage={"total_tokens": 9},
         )
@@ -324,6 +335,8 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.json()["session"]["messages"][0]["content"], "根据知识库说明 hello")
         self.assertEqual(response.json()["session"]["messages"][1]["mode"], "rag")
         self.assertEqual(response.json()["session"]["messages"][1]["references"][0]["page_content"], "hello")
+        self.assertEqual(response.json()["attachments"][0]["filename"], "报告.md")
+        self.assertEqual(response.json()["session"]["messages"][1]["attachments"][0]["download_url"], "/generated-documents/doc123/download")
         self.assertEqual(
             self.agent_service.answer_requests[0],
             {

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sqlalchemy import Engine, create_engine
+from sqlalchemy import Engine, create_engine, inspect, text
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -33,3 +33,15 @@ def create_session_factory(database_url: str | None = None) -> sessionmaker[Sess
 
 def init_database(engine: Engine) -> None:
     Base.metadata.create_all(bind=engine)
+    _migrate_chat_messages(engine)
+
+
+def _migrate_chat_messages(engine: Engine) -> None:
+    inspector = inspect(engine)
+    if "chat_messages" not in inspector.get_table_names():
+        return
+    columns = {column["name"] for column in inspector.get_columns("chat_messages")}
+    if "attachments_json" in columns:
+        return
+    with engine.begin() as connection:
+        connection.execute(text("ALTER TABLE chat_messages ADD COLUMN attachments_json TEXT"))

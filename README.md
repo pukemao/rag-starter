@@ -55,6 +55,7 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd pytho
 | `RAG_WEATHER_GEOCODING_URL` | Open-Meteo geocoding | 天气工具城市编码接口 |
 | `RAG_WEATHER_FORECAST_URL` | Open-Meteo forecast | 天气工具天气预报接口 |
 | `RAG_WEATHER_TIMEOUT_SECONDS` | `10.0` | 天气工具请求超时时间 |
+| `RAG_GENERATED_DOCUMENT_DIRECTORY` | `storage/generated_documents` | Agent 生成文档的本地存储目录 |
 
 本地开发可以在项目根目录创建 `.env`，项目启动时会自动读取：
 
@@ -149,7 +150,7 @@ print(result.used_rag)
 print(result.references)
 ```
 
-流程为：用户问题 -> Agent 执行器 -> 模型根据系统提示词和工具描述判断是否调用工具 -> 如需检索则调用 `search_knowledge_base` 查询本地 Chroma 知识库；如需天气则调用 `query_weather`，必要时先调用 `get_current_date` 或 `get_current_location_city` 补齐日期和默认城市 -> 模型整合工具结果和用户问题生成最终回答。工具描述通过 `@tool("tool_name", description=...)` 显式声明，描述中包含工具能力、适合调用场景、不应调用场景、参数说明和结果输出说明。后续新增工具统一在 `src/agent/tools.py` 注册。
+流程为：用户问题 -> Agent 执行器 -> 模型根据系统提示词和工具描述判断是否调用工具 -> 如需检索则调用 `search_knowledge_base` 查询本地 Chroma 知识库；如需天气则调用 `query_weather`，必要时先调用 `get_current_date` 或 `get_current_location_city` 补齐日期和默认城市；如需导出文档则先整理要写入文档的内容，再调用 `generate_document` 生成可下载文件 -> 模型整合工具结果和用户问题生成最终回答。工具描述通过 `@tool("tool_name", description=...)` 显式声明，描述中包含工具能力、适合调用场景、不应调用场景、参数说明和结果输出说明。后续新增工具统一在 `src/agent/tools.py` 注册。
 
 当前 Agent 工具：
 
@@ -157,6 +158,9 @@ print(result.references)
 - `get_current_date()`：返回 `RAG_TIMEZONE` 下的当前日期，用于把“今天、明天、后天”等相对日期换算为明确日期。
 - `get_current_location_city()`：返回 `RAG_DEFAULT_CITY` 配置的默认城市。它不是浏览器定位，也不会通过服务器 IP 猜测用户真实位置。
 - `query_weather(city, date)`：查询指定城市和 `YYYY-MM-DD` 日期的天气预报，返回天气概况、气温、降水概率和风速；默认使用 Open-Meteo 公开接口，无需 API Key。
+- `generate_document(content, document_type, filename="")`：把模型整理好的字符串内容生成可下载文档，支持 `markdown`、`word`、`excel`、`pdf`。用户指定文件名时传入 `filename`，未指定时系统自动生成默认文件名。Word/PDF/Markdown 推荐传 Markdown 兼容内容，Excel 推荐传 Markdown 表格、CSV 或 JSON 数组。
+
+生成文档默认保存到 `storage/generated_documents`，并通过附件返回给前端。对话页面会在模型回答下方显示文件卡片，用户可直接在浏览器下载。生成文档附件也会随聊天消息持久化到 SQLite，刷新后仍可查看下载入口。
 
 DeepSeek V4 thinking mode 与工具调用同时使用时，工具调用后的下一次请求必须把上一轮 assistant 消息中的 `reasoning_content`、`tool_calls` 等原始字段完整回传。项目内置 `DeepSeekToolCallingAgentExecutor` 直接使用 OpenAI 兼容接口执行工具调用循环，保留原始 assistant payload，再追加 tool 结果继续请求，因此不需要关闭 thinking mode。非 DeepSeek 提供方仍可回退到 LangChain `create_agent`。
 
@@ -192,6 +196,7 @@ uvicorn src.api.main:app --reload
 - `POST /chat`: 普通大模型对话，支持传入历史上下文
 - `POST /rag/chat`: RAG 增强对话，基于本地知识库检索结果调用 DeepSeek
 - `POST /agent/chat`: Agent 智能对话，由模型自动判断是否调用知识库检索工具
+- `GET /generated-documents/{file_id}/download`: 下载 Agent 生成的 Markdown、Word、Excel 或 PDF 文件
 - `GET /chat/sessions`: 列出本地持久化会话
 - `GET /chat/sessions/{session_id}`: 获取会话和消息详情
 - `DELETE /chat/sessions/{session_id}`: 删除会话和消息
@@ -247,7 +252,19 @@ curl -X POST http://127.0.0.1:8000/agent/chat \
 
 `POST /rag/chat` 响应包含 `answer`、`question`、实际发送给 LLM 的 `prompt`、`references`、`model` 和 `usage`。如果没有配置 `DEEPSEEK_API_KEY`，接口会返回 `500` 并提示设置环境变量。
 
-`POST /agent/chat` 响应包含 `answer`、`question`、`prompt`、`used_rag`、`references`、`model`、`usage` 和持久化后的 `session`。`used_rag=true` 表示本轮 Agent 调用了知识库工具；`used_rag=false` 表示模型判断无需检索，直接完成普通对话。
+`POST /agent/chat` 响应包含 `answer`、`question`、`prompt`、`used_rag`、`references`、`attachments`、`model`、`usage` 和持久化后的 `session`。`used_rag=true` 表示本轮 Agent 调用了知识库工具；`used_rag=false` 表示模型判断无需检索，直接完成普通对话。`attachments` 用于返回 `generate_document` 生成的文件下载信息，例如：
+
+```json
+{
+  "file_id": "f3...",
+  "filename": "项目总结.docx",
+  "document_type": "word",
+  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "download_url": "/generated-documents/f3.../download",
+  "size": 12345,
+  "created_at": "2026-05-14T00:00:00+00:00"
+}
+```
 
 ## 前端 Web
 
@@ -276,7 +293,7 @@ VITE_API_BASE_URL=http://127.0.0.1:8000
 当前页面包含：
 
 - 状态：系统控制台，聚合 `/health`、知识库文件、会话和用户设置数据，以指标卡、文件类型分布、chunk 规模、会话活跃度和系统链路检查展示当前运行状态
-- 对话：用户端 Agent 智能对话页，支持新增会话、搜索会话、本地存储会话、删除会话、上下文记忆；输入框不再要求用户手动选择 `LLM/RAG`，后端 Agent 会自动判断是否需要调用知识库检索工具；模型回答按 Markdown 展示；可读取用户设置决定是否显示 RAG 参考段落和聊天背景
+- 对话：用户端 Agent 智能对话页，支持新增会话、搜索会话、本地存储会话、删除会话、上下文记忆；输入框不再要求用户手动选择 `LLM/RAG`，后端 Agent 会自动判断是否需要调用知识库检索工具、天气工具或文档生成工具；模型回答按 Markdown 展示；生成文档会以附件卡片显示并支持浏览器下载；可读取用户设置决定是否显示 RAG 参考段落和聊天背景
 - 知识库：用户端知识库管理页，主页面展示文件列表；上传文件和查询知识库通过按钮弹出表单完成；上传支持拖拽和点击选择，可批量上传；查询结果在查询弹窗内展示；按文件操作优先使用 `source_id`
 - 设置：左下角设置入口进入用户设置页；设置页使用全浏览器工作区布局，包含“配置”和“个性化”设置项。“配置”用于控制 RAG 回答是否显示参考段落；“个性化”用于上传、预览、调整透明度和删除聊天背景图片；设置通过后端持久化到 SQLite
 

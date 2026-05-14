@@ -7,6 +7,7 @@ from src.agent.tools import (
     GET_CURRENT_LOCATION_CITY_DESCRIPTION,
     QUERY_WEATHER_DESCRIPTION,
     SEARCH_KNOWLEDGE_BASE_DESCRIPTION,
+    GENERATE_DOCUMENT_DESCRIPTION,
     AgentToolContext,
     create_agent_tools,
 )
@@ -41,6 +42,25 @@ class FakeWeatherService:
         )
 
 
+class FakeDocumentGenerator:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def generate(self, *, content, document_type, filename=None):
+        from src.document_generator import DocumentAttachment
+
+        self.requests.append({"content": content, "document_type": document_type, "filename": filename})
+        return DocumentAttachment(
+            file_id="doc123",
+            filename=filename or "generated.md",
+            document_type=document_type,
+            mime_type="text/markdown",
+            download_url="/generated-documents/doc123/download",
+            size=10,
+            created_at="2026-05-14T00:00:00+00:00",
+        )
+
+
 class AgentToolTests(unittest.TestCase):
     def test_search_knowledge_base_tool_uses_explicit_description(self):
         context = AgentToolContext(references=[])
@@ -51,6 +71,7 @@ class AgentToolTests(unittest.TestCase):
         self.assertEqual(tool_by_name["get_current_date"].description, GET_CURRENT_DATE_DESCRIPTION.strip())
         self.assertEqual(tool_by_name["get_current_location_city"].description, GET_CURRENT_LOCATION_CITY_DESCRIPTION.strip())
         self.assertEqual(tool_by_name["query_weather"].description, QUERY_WEATHER_DESCRIPTION.strip())
+        self.assertEqual(tool_by_name["generate_document"].description, GENERATE_DOCUMENT_DESCRIPTION.strip())
         self.assertIn("工具能力", tool_by_name["query_weather"].description)
         self.assertIn("参数说明", tool_by_name["query_weather"].description)
         self.assertIn("结果输出说明", tool_by_name["query_weather"].description)
@@ -89,6 +110,26 @@ class AgentToolTests(unittest.TestCase):
         self.assertIn("城市：上海，中国", weather_output)
         self.assertIn("天气：晴", weather_output)
         self.assertEqual(weather_service.requests[0], {"city": "上海", "target_date": "2026-05-14"})
+
+    def test_generate_document_tool_collects_attachments(self):
+        generator = FakeDocumentGenerator()
+        context = AgentToolContext(references=[])
+        tools = {
+            tool.name: tool
+            for tool in create_agent_tools(
+                vector_service=FakeVectorService(),
+                context=context,
+                document_generator=generator,
+                default_k=2,
+            )
+        }
+
+        output = tools["generate_document"].invoke({"content": "# 报告", "document_type": "markdown", "filename": "报告.md"})
+
+        self.assertIn("文档已生成", output)
+        self.assertEqual(generator.requests[0], {"content": "# 报告", "document_type": "markdown", "filename": "报告.md"})
+        self.assertEqual(context.attachments[0]["file_id"], "doc123")
+        self.assertEqual(context.attachments[0]["filename"], "报告.md")
 
 
 if __name__ == "__main__":

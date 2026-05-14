@@ -41,6 +41,7 @@ class ChatMessageModel(Base):
     content: Mapped[str] = mapped_column(Text)
     mode: Mapped[str | None] = mapped_column(String(20), nullable=True)
     references_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachments_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utc_now, index=True)
 
     session: Mapped[ChatSessionModel] = relationship(back_populates="messages")

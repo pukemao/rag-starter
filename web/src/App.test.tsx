@@ -53,6 +53,19 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
         prompt: "agent prompt",
         used_rag: isRag,
         references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
+        attachments: message.includes("文档")
+          ? [
+              {
+                file_id: "doc123",
+                filename: "测试报告.md",
+                document_type: "markdown",
+                mime_type: "text/markdown; charset=utf-8",
+                download_url: "/generated-documents/doc123/download",
+                size: 2048,
+                created_at: now
+              }
+            ]
+          : [],
         model: "test",
         usage: {},
         session: {
@@ -68,6 +81,19 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
               content: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
               mode: isRag ? "rag" : "normal",
               references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
+              attachments: message.includes("文档")
+                ? [
+                    {
+                      file_id: "doc123",
+                      filename: "测试报告.md",
+                      document_type: "markdown",
+                      mime_type: "text/markdown; charset=utf-8",
+                      download_url: "/generated-documents/doc123/download",
+                      size: 2048,
+                      created_at: now
+                    }
+                  ]
+                : [],
               created_at: now
             }
           ]
@@ -98,6 +124,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
               content: "RAG 回答",
               mode: "rag",
               references: [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }],
+              attachments: [],
               created_at: now
             }
           ]
@@ -119,7 +146,15 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
           updated_at: now,
           messages: [
             { id: "u-chat", role: "user", content: "测试 markdown", mode: "normal", references: [], created_at: now },
-            { id: "a-chat", role: "assistant", content: "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```", mode: "normal", references: [], created_at: now }
+            {
+              id: "a-chat",
+              role: "assistant",
+              content: "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
+              mode: "normal",
+              references: [],
+              attachments: [],
+              created_at: now
+            }
           ]
         }
       }),
@@ -200,6 +235,16 @@ describe("App", () => {
 
     await userEvent.click(copyButtons[1]);
     expect(writeTextMock).toHaveBeenLastCalledWith("## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```");
+  });
+
+  it("renders generated document attachment in chat route", async () => {
+    renderApp("/chat");
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "生成文档");
+    await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    const link = await screen.findByRole("link", { name: /测试报告\.md/ });
+    expect(link).toHaveAttribute("href", "http://127.0.0.1:8000/generated-documents/doc123/download");
+    expect(screen.getByText("Markdown · 2.0 KB")).toBeInTheDocument();
   });
 
   it("does not persist session when creating a new chat only", async () => {

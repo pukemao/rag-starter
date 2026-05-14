@@ -117,6 +117,11 @@ class WeatherSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class GeneratedDocumentSettings:
+    directory: str = getenv("RAG_GENERATED_DOCUMENT_DIRECTORY", "storage/generated_documents")
+
+
+@dataclass(frozen=True, slots=True)
 class AppSettings:
     api: ApiSettings = ApiSettings()
     splitter: SplitterSettings = SplitterSettings()
@@ -126,6 +131,7 @@ class AppSettings:
     rag: RagSettings = RagSettings()
     llm: LlmSettings = LlmSettings()
     weather: WeatherSettings = WeatherSettings()
+    generated_documents: GeneratedDocumentSettings = GeneratedDocumentSettings()
 
 
 settings = AppSettings()

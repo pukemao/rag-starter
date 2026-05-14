@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from langchain_core.tools import BaseTool, tool
 
 from src.agent.weather import WeatherService
 from src.config import settings
+from src.document_generator import DocumentGeneratorService
 from src.rag import RagReference
 from src.vector_store import VectorStoreService
 
@@ -93,6 +94,29 @@ QUERY_WEATHER_DESCRIPTION = """工具名称：query_weather
 返回结构化文本，包括城市、日期、天气、气温范围、降水概率和风速。最终回答应基于工具结果自然说明，并提示天气预报存在变化可能。
 """
 
+GENERATE_DOCUMENT_DESCRIPTION = """工具名称：generate_document
+
+工具能力：
+将一段已经整理好的字符串内容生成可下载文档。当前支持 markdown、word、excel、pdf 四种文档类型。适合把当前对话结论、用户提供的正文、模型整理后的报告、清单、表格或总结导出成文件。
+
+适合调用的场景：
+- 用户明确要求“生成文档、导出文档、转成 Word/Excel/PDF/Markdown、下载、保存为文件”等。
+- 用户要求把当前回答、历史对话中的某段内容、用户粘贴的内容整理成指定格式文件。
+- 用户要求生成表格文件时，可调用该工具生成 excel，但必须先把内容整理成结构化表格字符串。
+
+不应调用的场景：
+- 用户只是让你回答、总结、润色、翻译、解释内容，但没有要求生成可下载文件。
+- 用户没有提供文档内容，且历史对话中也无法明确判断要写入文档的内容时，应先追问，不要生成空文档。
+
+参数说明：
+- content：必填字符串。必须是最终写入文档的完整内容，不要只传“上面的内容”“刚才的回答”等指代表达。生成 markdown、word、pdf 时，建议使用 Markdown 兼容格式，例如标题、段落、列表、表格。生成 excel 时，优先传 Markdown 表格、CSV 或 JSON 数组，保证表格列名和行数据清晰。
+- document_type：必填字符串。只能是 markdown、word、excel、pdf 之一。用户说“md”时使用 markdown；说“doc/docx/Word”时使用 word；说“xls/xlsx/表格”时使用 excel。
+- filename：可选字符串。用户指定文件名时使用用户给出的名称；用户没有指定时留空，系统会生成默认文件名。不要把路径作为文件名传入。
+
+结果输出说明：
+工具返回生成文件的结构化信息，包括 file_id、filename、document_type、mime_type、download_url、size 和 created_at。最终回答应告诉用户文档已生成，并对文档内容做简要总结；不要把下载地址当作正文大段重复。前端会根据工具结果展示下载入口。
+"""
+
 
 @dataclass(slots=True)
 class AgentToolContext:
@@ -100,6 +124,7 @@ class AgentToolContext:
 
     references: list[RagReference]
     used_rag: bool = False
+    attachments: list[dict[str, Any]] = field(default_factory=list)
 
 
 def create_agent_tools(
@@ -107,6 +132,7 @@ def create_agent_tools(
     vector_service: VectorStoreService,
     context: AgentToolContext,
     weather_service: WeatherService | None = None,
+    document_generator: DocumentGeneratorService | None = None,
     default_k: int = settings.rag.default_top_k,
 ) -> list[BaseTool]:
     """Create the tools available to the agent.
@@ -153,7 +179,34 @@ def create_agent_tools(
     def query_weather(city: str, date: str) -> str:
         return active_weather_service.get_weather(city=city, target_date=date).to_text()
 
-    return [search_knowledge_base, get_current_date, get_current_location_city, query_weather]
+    active_document_generator = document_generator or DocumentGeneratorService()
+
+    @tool("generate_document", description=GENERATE_DOCUMENT_DESCRIPTION)
+    def generate_document(content: str, document_type: str, filename: str = "") -> str:
+        try:
+            attachment = active_document_generator.generate(
+                content=content,
+                document_type=document_type,
+                filename=filename or None,
+            )
+        except Exception as exc:
+            return f"文档生成失败：{exc}"
+        payload = attachment.to_dict()
+        context.attachments.append(payload)
+        return "\n".join(
+            [
+                "文档已生成。",
+                f"file_id: {payload['file_id']}",
+                f"filename: {payload['filename']}",
+                f"document_type: {payload['document_type']}",
+                f"mime_type: {payload['mime_type']}",
+                f"download_url: {payload['download_url']}",
+                f"size: {payload['size']}",
+                f"created_at: {payload['created_at']}",
+            ]
+        )
+
+    return [search_knowledge_base, get_current_date, get_current_location_city, query_weather, generate_document]
 
 
 def _format_reference(reference: RagReference) -> str:

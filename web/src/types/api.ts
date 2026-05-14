@@ -62,9 +62,20 @@ export type AgentChatResponse = {
   prompt: string;
   used_rag: boolean;
   references: RagReference[];
+  attachments: GeneratedDocumentAttachment[];
   model: string;
   usage: Record<string, unknown>;
   session?: ChatSessionResponse | null;
+};
+
+export type GeneratedDocumentAttachment = {
+  file_id: string;
+  filename: string;
+  document_type: "markdown" | "word" | "excel" | "pdf" | string;
+  mime_type: string;
+  download_url: string;
+  size: number;
+  created_at: string;
 };
 
 export type ChatMessageResponse = {
@@ -73,6 +84,7 @@ export type ChatMessageResponse = {
   content: string;
   mode?: "normal" | "rag" | null;
   references: RagReference[];
+  attachments: GeneratedDocumentAttachment[];
   created_at: string;
 };
 

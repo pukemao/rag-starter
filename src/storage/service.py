@@ -23,6 +23,7 @@ class StoredChatMessage:
     content: str
     mode: str | None
     references: list[dict] = field(default_factory=list)
+    attachments: list[dict] = field(default_factory=list)
     created_at: datetime = field(default_factory=utc_now)
 
 
@@ -82,6 +83,7 @@ class StorageService:
         session_id: str | None = None,
         title: str | None = None,
         references: list[dict] | None = None,
+        attachments: list[dict] | None = None,
     ) -> StoredChatSession:
         now = utc_now()
         with self._session_factory() as db:
@@ -118,6 +120,7 @@ class StorageService:
                     content=assistant_content,
                     mode=mode,
                     references_json=json.dumps(references or [], ensure_ascii=False),
+                    attachments_json=json.dumps(attachments or [], ensure_ascii=False),
                     created_at=now,
                 )
             )
@@ -165,21 +168,27 @@ class StorageService:
 
     @staticmethod
     def _to_message(row: ChatMessageModel) -> StoredChatMessage:
-        references: list[dict] = []
-        if row.references_json:
-            try:
-                parsed = json.loads(row.references_json)
-                references = parsed if isinstance(parsed, list) else []
-            except json.JSONDecodeError:
-                references = []
+        references = StorageService._parse_json_list(row.references_json)
+        attachments = StorageService._parse_json_list(row.attachments_json)
         return StoredChatMessage(
             id=row.id,
             role=row.role,
             content=row.content,
             mode=row.mode,
             references=references,
+            attachments=attachments,
             created_at=row.created_at,
         )
+
+    @staticmethod
+    def _parse_json_list(raw: str | None) -> list[dict]:
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        return parsed if isinstance(parsed, list) else []
 
     def _to_session(self, row: ChatSessionModel, *, include_messages: bool) -> StoredChatSession:
         return StoredChatSession(

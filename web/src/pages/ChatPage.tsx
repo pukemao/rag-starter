@@ -1,14 +1,32 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { MessageSquarePlus, Search, Send, Trash2, Bot, User, Sparkles, Loader2, PanelLeftClose, PanelLeftOpen, Plus, Copy, Check } from "lucide-react";
+import {
+  MessageSquarePlus,
+  Search,
+  Send,
+  Trash2,
+  Bot,
+  User,
+  Sparkles,
+  Loader2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  Plus,
+  Copy,
+  Check,
+  Download,
+  FileText,
+  Table2,
+  FileType
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { chatWithAgent, deleteChatSession, getChatSession, getUserSettings, listChatSessions } from "@/lib/api";
+import { API_BASE_URL, chatWithAgent, deleteChatSession, getChatSession, getUserSettings, listChatSessions } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { ChatHistoryMessage, ChatSessionResponse, RagReference, UserSettingsResponse } from "@/types/api";
+import type { ChatHistoryMessage, ChatSessionResponse, GeneratedDocumentAttachment, RagReference, UserSettingsResponse } from "@/types/api";
 
 type ChatMode = "normal" | "rag";
 
@@ -18,6 +36,7 @@ type ChatMessage = {
   content: string;
   mode?: ChatMode;
   references?: RagReference[];
+  attachments?: GeneratedDocumentAttachment[];
   createdAt: string;
 };
 
@@ -58,6 +77,7 @@ function toChatSession(session: ChatSessionResponse): ChatSession {
       content: message.content,
       mode: message.mode ?? undefined,
       references: message.references,
+      attachments: message.attachments,
       createdAt: message.created_at
     })),
     createdAt: session.created_at,
@@ -497,6 +517,7 @@ function MessageBubble({ message, showRagReferences }: { message: ChatMessage; s
               ))}
             </div>
           ) : null}
+          {!isUser && message.attachments?.length ? <AttachmentList attachments={message.attachments} /> : null}
         </div>
         <div className={cn("mt-1 flex", isUser ? "justify-end" : "justify-start")}>
           <button
@@ -543,6 +564,71 @@ async function copyTextToClipboard(text: string) {
   if (!copied) {
     throw new Error("copy failed");
   }
+}
+
+function AttachmentList({ attachments }: { attachments: GeneratedDocumentAttachment[] }) {
+  return (
+    <div className="mt-3 space-y-2 border-t pt-3">
+      {attachments.map((attachment) => (
+        <a
+          key={attachment.file_id}
+          className="group flex items-center gap-3 rounded-md border bg-background px-3 py-2 text-sm transition-colors hover:border-primary/50 hover:bg-primary/5"
+          href={toDownloadUrl(attachment.download_url)}
+          download={attachment.filename}
+          target="_blank"
+          rel="noreferrer"
+        >
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-primary/10 text-primary">
+            {documentIcon(attachment.document_type)}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium text-foreground">{attachment.filename}</span>
+            <span className="mt-0.5 block text-xs text-muted-foreground">
+              {documentTypeLabel(attachment.document_type)} · {formatFileSize(attachment.size)}
+            </span>
+          </span>
+          <Download className="h-4 w-4 shrink-0 text-muted-foreground transition-colors group-hover:text-primary" aria-hidden="true" />
+        </a>
+      ))}
+    </div>
+  );
+}
+
+function toDownloadUrl(path: string) {
+  if (/^https?:\/\//i.test(path)) {
+    return path;
+  }
+  return `${API_BASE_URL}${path.startsWith("/") ? path : `/${path}`}`;
+}
+
+function documentIcon(documentType: string) {
+  if (documentType === "excel") {
+    return <Table2 className="h-4 w-4" aria-hidden="true" />;
+  }
+  if (documentType === "pdf") {
+    return <FileType className="h-4 w-4" aria-hidden="true" />;
+  }
+  return <FileText className="h-4 w-4" aria-hidden="true" />;
+}
+
+function documentTypeLabel(documentType: string) {
+  const labels: Record<string, string> = {
+    markdown: "Markdown",
+    word: "Word",
+    excel: "Excel",
+    pdf: "PDF"
+  };
+  return labels[documentType] ?? documentType;
+}
+
+function formatFileSize(size: number) {
+  if (size < 1024) {
+    return `${size} B`;
+  }
+  if (size < 1024 * 1024) {
+    return `${(size / 1024).toFixed(1)} KB`;
+  }
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
 }
 
 function MarkdownContent({ content }: { content: string }) {

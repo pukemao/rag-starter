@@ -122,12 +122,23 @@ class RagReferenceResponse(BaseModel):
     score: float | None = None
 
 
+class GeneratedDocumentAttachmentResponse(BaseModel):
+    file_id: str
+    filename: str
+    document_type: str
+    mime_type: str
+    download_url: str
+    size: int
+    created_at: str
+
+
 class ChatMessageResponse(BaseModel):
     id: str
     role: str
     content: str
     mode: str | None = None
     references: list[RagReferenceResponse] = Field(default_factory=list)
+    attachments: list[GeneratedDocumentAttachmentResponse] = Field(default_factory=list)
     created_at: str
 
 
@@ -167,6 +178,7 @@ class AgentChatResponse(BaseModel):
     prompt: str
     used_rag: bool
     references: list[RagReferenceResponse]
+    attachments: list[GeneratedDocumentAttachmentResponse] = Field(default_factory=list)
     model: str
     usage: dict[str, Any] = Field(default_factory=dict)
     session: ChatSessionResponse | None = None

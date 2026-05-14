@@ -7,10 +7,12 @@ from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.agent import AgentChatService
 from src.config import settings
+from src.document_generator import DocumentGeneratorService
 from src.llm import DeepSeekClient, LLMConfigurationError
 from src.rag import RagService
 from src.storage import StorageService
@@ -24,6 +26,7 @@ from .schemas import (
     AgentChatResponse,
     ChatRequest,
     ChatResponse,
+    GeneratedDocumentAttachmentResponse,
     ChatMessageResponse,
     ChatSessionListResponse,
     ChatSessionResponse,
@@ -81,6 +84,7 @@ def _message_response(message: StoredChatMessage) -> ChatMessageResponse:
         content=message.content,
         mode=message.mode,
         references=[RagReferenceResponse(**reference) for reference in message.references],
+        attachments=[GeneratedDocumentAttachmentResponse(**attachment) for attachment in message.attachments],
         created_at=_dt(message.created_at),
     )
 
@@ -109,6 +113,7 @@ def create_app(
     rag_service: RagService | None = None,
     agent_service: AgentChatService | None = None,
     storage_service: StorageService | None = None,
+    document_generator: DocumentGeneratorService | None = None,
 ) -> FastAPI:
     """Create the FastAPI app.
 
@@ -126,8 +131,9 @@ def create_app(
     )
     vector_service = service or VectorStoreService()
     active_rag_service = rag_service or RagService(vector_service=vector_service)
-    active_agent_service = agent_service or AgentChatService(vector_service=vector_service)
     active_storage_service = storage_service or StorageService()
+    active_document_generator = document_generator or DocumentGeneratorService()
+    active_agent_service = agent_service or AgentChatService(vector_service=vector_service, document_generator=active_document_generator)
 
     def get_service() -> VectorStoreService:
         return vector_service
@@ -140,6 +146,9 @@ def create_app(
 
     def get_storage_service() -> StorageService:
         return active_storage_service
+
+    def get_document_generator() -> DocumentGeneratorService:
+        return active_document_generator
 
     @app.get("/health")
     def health() -> dict[str, str]:
@@ -407,6 +416,7 @@ def create_app(
                 assistant_content=result.answer,
                 mode="rag" if result.used_rag else "normal",
                 references=references,
+                attachments=result.attachments,
             )
         except LLMConfigurationError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -426,10 +436,22 @@ def create_app(
                 )
                 for reference in result.references
             ],
+            attachments=[GeneratedDocumentAttachmentResponse(**attachment) for attachment in result.attachments],
             model=result.model,
             usage=result.usage,
             session=_session_response(session),
         )
+
+    @app.get("/generated-documents/{file_id}/download")
+    def download_generated_document(
+        file_id: str,
+        active_generator: DocumentGeneratorService = Depends(get_document_generator),
+    ) -> FileResponse:
+        path = active_generator.get_file_path(file_id)
+        if path is None or not path.exists():
+            raise HTTPException(status_code=404, detail="生成文档不存在")
+        filename = path.name.removeprefix(f"{file_id}_")
+        return FileResponse(path, filename=filename)
 
     @app.get("/chat/sessions", response_model=ChatSessionListResponse)
     def list_chat_sessions(active_storage: StorageService = Depends(get_storage_service)) -> ChatSessionListResponse:
