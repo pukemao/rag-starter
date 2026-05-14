@@ -84,6 +84,7 @@ class StorageService:
         title: str | None = None,
         references: list[dict] | None = None,
         attachments: list[dict] | None = None,
+        user_attachments: list[dict] | None = None,
     ) -> StoredChatSession:
         now = utc_now()
         with self._session_factory() as db:
@@ -109,6 +110,7 @@ class StorageService:
                     role="user",
                     content=user_content,
                     mode=mode,
+                    attachments_json=json.dumps(user_attachments or [], ensure_ascii=False),
                     created_at=now,
                 )
             )

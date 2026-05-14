@@ -151,6 +151,7 @@ class ChatMessageResponse(BaseModel):
     mode: str | None = None
     references: list[RagReferenceResponse] = Field(default_factory=list)
     attachments: list[GeneratedDocumentAttachmentResponse] = Field(default_factory=list)
+    uploaded_files: list[ChatFileResponse] = Field(default_factory=list)
     created_at: str
 
 

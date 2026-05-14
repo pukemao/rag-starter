@@ -86,9 +86,26 @@ def _message_response(message: StoredChatMessage) -> ChatMessageResponse:
         content=message.content,
         mode=message.mode,
         references=[RagReferenceResponse(**reference) for reference in message.references],
-        attachments=[GeneratedDocumentAttachmentResponse(**attachment) for attachment in message.attachments],
+        attachments=_generated_attachment_responses(message.attachments),
+        uploaded_files=_uploaded_file_responses(message.attachments),
         created_at=_dt(message.created_at),
     )
+
+
+def _generated_attachment_responses(attachments: list[dict]) -> list[GeneratedDocumentAttachmentResponse]:
+    responses: list[GeneratedDocumentAttachmentResponse] = []
+    for attachment in attachments:
+        if {"document_type", "mime_type", "download_url"}.issubset(attachment):
+            responses.append(GeneratedDocumentAttachmentResponse(**attachment))
+    return responses
+
+
+def _uploaded_file_responses(attachments: list[dict]) -> list[ChatFileResponse]:
+    responses: list[ChatFileResponse] = []
+    for attachment in attachments:
+        if "filename" in attachment and "chunk_count" in attachment and "document_type" not in attachment:
+            responses.append(ChatFileResponse(**attachment))
+    return responses
 
 
 def _session_response(session: StoredChatSession, *, include_messages: bool = True) -> ChatSessionResponse:
@@ -405,8 +422,10 @@ def create_app(
         request: AgentChatRequest,
         active_agent: AgentChatService = Depends(get_agent_service),
         active_storage: StorageService = Depends(get_storage_service),
+        active_chat_files: ChatFileService = Depends(get_chat_file_service),
     ) -> AgentChatResponse:
         try:
+            uploaded_files = [file.to_dict() for file in active_chat_files.list_files(request.file_ids)]
             result = active_agent.answer(
                 request.message,
                 k=request.k,
@@ -429,6 +448,7 @@ def create_app(
                 mode="rag" if result.used_rag else "normal",
                 references=references,
                 attachments=result.attachments,
+                user_attachments=uploaded_files,
             )
         except LLMConfigurationError as exc:
             raise HTTPException(status_code=500, detail=str(exc)) from exc

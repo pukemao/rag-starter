@@ -111,12 +111,13 @@ class FakeAgentService:
 class FakeChatFileService:
     def __init__(self) -> None:
         self.upload_requests = []
+        self.files = {}
 
     def save_upload(self, *, filename, content, content_type=""):
         from src.chat_files import ChatFile
 
         self.upload_requests.append({"filename": filename, "content": content, "content_type": content_type})
-        return ChatFile(
+        file = ChatFile(
             file_id="file123",
             filename=filename,
             size=len(content),
@@ -126,6 +127,24 @@ class FakeChatFileService:
             chunk_count=1,
             error="",
         )
+        self.files[file.file_id] = file
+        return file
+
+    def list_files(self, file_ids):
+        from src.chat_files import ChatFile
+
+        default_file = ChatFile(
+            file_id="file123",
+            filename="note.md",
+            size=12,
+            content_type="text/markdown",
+            status="ready",
+            created_at="2026-05-14T00:00:00+00:00",
+            chunk_count=1,
+            error="",
+        )
+        self.files.setdefault(default_file.file_id, default_file)
+        return [self.files[file_id] for file_id in file_ids if file_id in self.files]
 
 
 class ApiTests(unittest.TestCase):
@@ -356,6 +375,7 @@ class ApiTests(unittest.TestCase):
         self.assertTrue(response.json()["used_rag"])
         self.assertEqual(response.json()["references"][0]["page_content"], "hello")
         self.assertEqual(response.json()["session"]["messages"][0]["content"], "根据知识库说明 hello")
+        self.assertEqual(response.json()["session"]["messages"][0]["uploaded_files"][0]["filename"], "note.md")
         self.assertEqual(response.json()["session"]["messages"][1]["mode"], "rag")
         self.assertEqual(response.json()["session"]["messages"][1]["references"][0]["page_content"], "hello")
         self.assertEqual(response.json()["attachments"][0]["filename"], "报告.md")

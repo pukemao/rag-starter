@@ -61,6 +61,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
     const message = String(body.message ?? "测试 markdown");
     const isRag = message.includes("RAG");
+    const uploadedFiles = Array.isArray(body.file_ids) && body.file_ids.length ? [{ file_id: "file123", filename: "note.md", size: 12, content_type: "text/markdown", status: "ready", created_at: now, chunk_count: 1, error: "" }] : [];
     return new Response(
       JSON.stringify({
         answer: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
@@ -89,7 +90,16 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
           created_at: now,
           updated_at: now,
           messages: [
-            { id: isRag ? "u-rag" : "u-chat", role: "user", content: message, mode: isRag ? "rag" : "normal", references: [], created_at: now },
+            {
+              id: isRag ? "u-rag" : "u-chat",
+              role: "user",
+              content: message,
+              mode: isRag ? "rag" : "normal",
+              references: [],
+              attachments: [],
+              uploaded_files: uploadedFiles,
+              created_at: now
+            },
             {
               id: isRag ? "a-rag" : "a-chat",
               role: "assistant",
@@ -109,6 +119,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
                     }
                   ]
                 : [],
+              uploaded_files: [],
               created_at: now
             }
           ]
@@ -132,7 +143,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
           created_at: now,
           updated_at: now,
           messages: [
-            { id: "u-rag", role: "user", content: "测试 RAG", mode: "rag", references: [], created_at: now },
+            { id: "u-rag", role: "user", content: "测试 RAG", mode: "rag", references: [], attachments: [], uploaded_files: [], created_at: now },
             {
               id: "a-rag",
               role: "assistant",
@@ -140,6 +151,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
               mode: "rag",
               references: [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }],
               attachments: [],
+              uploaded_files: [],
               created_at: now
             }
           ]
@@ -160,7 +172,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
           created_at: now,
           updated_at: now,
           messages: [
-            { id: "u-chat", role: "user", content: "测试 markdown", mode: "normal", references: [], created_at: now },
+            { id: "u-chat", role: "user", content: "测试 markdown", mode: "normal", references: [], attachments: [], uploaded_files: [], created_at: now },
             {
               id: "a-chat",
               role: "assistant",
@@ -168,6 +180,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
               mode: "normal",
               references: [],
               attachments: [],
+              uploaded_files: [],
               created_at: now
             }
           ]
@@ -277,6 +290,8 @@ describe("App", () => {
     await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
     await screen.findByRole("heading", { name: "回答标题" });
 
+    expect(screen.getAllByText("note.md").length).toBeGreaterThan(0);
+    expect(screen.getByText("上传文件 · 1 段 · 12 B")).toBeInTheDocument();
     const agentRequest = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/agent/chat"));
     const body = JSON.parse(String(agentRequest?.[1]?.body ?? "{}"));
     expect(body.file_ids).toEqual(["file123"]);

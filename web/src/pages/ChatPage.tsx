@@ -38,6 +38,7 @@ type ChatMessage = {
   mode?: ChatMode;
   references?: RagReference[];
   attachments?: GeneratedDocumentAttachment[];
+  uploadedFiles?: ChatFileResponse[];
   createdAt: string;
 };
 
@@ -84,6 +85,7 @@ function toChatSession(session: ChatSessionResponse): ChatSession {
       mode: message.mode ?? undefined,
       references: message.references,
       attachments: message.attachments,
+      uploadedFiles: message.uploaded_files,
       createdAt: message.created_at
     })),
     createdAt: session.created_at,
@@ -266,6 +268,7 @@ export function ChatPage() {
     event.preventDefault();
     const message = input.trim();
     const readyFileIds = attachedFiles.filter((file) => file.status === "ready" && !file.uploading).map((file) => file.file_id);
+    const readyFiles = attachedFiles.filter((file) => file.status === "ready" && !file.uploading);
     const hasUploadingFiles = attachedFiles.some((file) => file.uploading);
     if (!message || chatMutation.isPending || hasUploadingFiles) {
       return;
@@ -277,6 +280,7 @@ export function ChatPage() {
       id: crypto.randomUUID(),
       role: "user",
       content: message,
+      uploadedFiles: readyFiles.map(toChatFileResponse),
       createdAt: new Date().toISOString()
     };
     setDraftSession(session);
@@ -650,6 +654,7 @@ function MessageBubble({ message, showRagReferences }: { message: ChatMessage; s
               ))}
             </div>
           ) : null}
+          {isUser && message.uploadedFiles?.length ? <UploadedFileList files={message.uploadedFiles} isUser /> : null}
           {!isUser && message.attachments?.length ? <AttachmentList attachments={message.attachments} /> : null}
         </div>
         <div className={cn("mt-1 flex", isUser ? "justify-end" : "justify-start")}>
@@ -671,6 +676,19 @@ function MessageBubble({ message, showRagReferences }: { message: ChatMessage; s
       ) : null}
     </article>
   );
+}
+
+function toChatFileResponse(file: UploadingChatFile): ChatFileResponse {
+  return {
+    file_id: file.file_id,
+    filename: file.filename,
+    size: file.size,
+    content_type: file.content_type,
+    status: file.status,
+    created_at: file.created_at,
+    chunk_count: file.chunk_count,
+    error: file.error
+  };
 }
 
 function ChatFileChips({ files, onRemove }: { files: UploadingChatFile[]; onRemove: (localId: string) => void }) {
@@ -698,6 +716,32 @@ function ChatFileChips({ files, onRemove }: { files: UploadingChatFile[]; onRemo
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function UploadedFileList({ files, isUser = false }: { files: ChatFileResponse[]; isUser?: boolean }) {
+  return (
+    <div className={cn("mt-3 space-y-2 border-t pt-3", isUser ? "border-primary-foreground/20" : "border-border")}>
+      {files.map((file) => (
+        <div
+          key={file.file_id}
+          className={cn(
+            "flex items-center gap-3 rounded-md border px-3 py-2 text-sm",
+            isUser ? "border-primary-foreground/20 bg-primary-foreground/10" : "bg-background"
+          )}
+        >
+          <span className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-md", isUser ? "bg-primary-foreground/15" : "bg-primary/10 text-primary")}>
+            <FileText className="h-4 w-4" aria-hidden="true" />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-medium">{file.filename}</span>
+            <span className={cn("mt-0.5 block text-xs", isUser ? "text-primary-foreground/75" : "text-muted-foreground")}>
+              上传文件 · {file.chunk_count} 段 · {formatFileSize(file.size)}
+            </span>
+          </span>
         </div>
       ))}
     </div>

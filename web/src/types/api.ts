@@ -96,6 +96,7 @@ export type ChatMessageResponse = {
   mode?: "normal" | "rag" | null;
   references: RagReference[];
   attachments: GeneratedDocumentAttachment[];
+  uploaded_files: ChatFileResponse[];
   created_at: string;
 };
 
