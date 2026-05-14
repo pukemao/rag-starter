@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { chatWithModel, chatWithRag } from "@/lib/api";
+import { loadUserPreferences, type UserPreferences } from "@/lib/userPreferences";
 import { cn } from "@/lib/utils";
 import type { ChatHistoryMessage, RagReference } from "@/types/api";
 
@@ -46,6 +47,7 @@ export function ChatPage() {
   const [input, setInput] = useState("");
   const [mode, setMode] = useState<ChatMode>("normal");
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [preferences, setPreferences] = useState<UserPreferences>(() => loadUserPreferences());
   const messageEndRef = useRef<HTMLDivElement | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -111,6 +113,19 @@ export function ChatPage() {
   useEffect(() => {
     resizeInput();
   }, [input]);
+
+  useEffect(() => {
+    function syncPreferences() {
+      setPreferences(loadUserPreferences());
+    }
+
+    window.addEventListener("storage", syncPreferences);
+    window.addEventListener("focus", syncPreferences);
+    return () => {
+      window.removeEventListener("storage", syncPreferences);
+      window.removeEventListener("focus", syncPreferences);
+    };
+  }, []);
 
   function createSession() {
     const now = new Date().toISOString();
@@ -291,28 +306,39 @@ export function ChatPage() {
           <Badge variant={mode === "rag" ? "default" : "outline"}>{mode === "rag" ? "RAG" : "LLM"}</Badge>
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto bg-background px-4 py-5 app-scrollbar">
-          <div className="mx-auto max-w-3xl space-y-5">
-            {activeSession?.messages.length ? (
-              activeSession.messages.map((message) => <MessageBubble key={message.id} message={message} />)
-            ) : (
-              <div className="flex min-h-[42dvh] flex-col items-center justify-center text-center">
-                <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary">
-                  <Sparkles className="h-6 w-6" aria-hidden="true" />
+        <div className="relative min-h-0 flex-1 overflow-hidden bg-background">
+          {preferences.chatBackgroundImage ? (
+            <img
+              src={preferences.chatBackgroundImage}
+              alt=""
+              aria-hidden="true"
+              className="pointer-events-none absolute inset-0 h-full w-full object-cover"
+              style={{ opacity: preferences.chatBackgroundOpacity }}
+            />
+          ) : null}
+          <div className="relative z-10 h-full overflow-y-auto px-4 py-5 app-scrollbar">
+            <div className="mx-auto max-w-3xl space-y-5">
+              {activeSession?.messages.length ? (
+                activeSession.messages.map((message) => <MessageBubble key={message.id} message={message} showRagReferences={preferences.showRagReferences} />)
+              ) : (
+                <div className="flex min-h-[42dvh] flex-col items-center justify-center text-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-md bg-primary/10 text-primary">
+                    <Sparkles className="h-6 w-6" aria-hidden="true" />
+                  </div>
+                  <h2 className="mt-4 text-xl font-semibold">开始一次知识库对话</h2>
+                  <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
+                    直接提问使用普通模型回答；开启 RAG 后，会先检索本地知识库，再生成增强回答。
+                  </p>
                 </div>
-                <h2 className="mt-4 text-xl font-semibold">开始一次知识库对话</h2>
-                <p className="mt-2 max-w-md text-sm leading-6 text-muted-foreground">
-                  直接提问使用普通模型回答；开启 RAG 后，会先检索本地知识库，再生成增强回答。
-                </p>
-              </div>
-            )}
-            {chatMutation.isPending ? (
-              <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
-                正在生成回答
-              </div>
-            ) : null}
-            <div ref={messageEndRef} />
+              )}
+              {chatMutation.isPending ? (
+                <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
+                  正在生成回答
+                </div>
+              ) : null}
+              <div ref={messageEndRef} />
+            </div>
           </div>
         </div>
 
@@ -360,7 +386,7 @@ export function ChatPage() {
   );
 }
 
-function MessageBubble({ message }: { message: ChatMessage }) {
+function MessageBubble({ message, showRagReferences }: { message: ChatMessage; showRagReferences: boolean }) {
   const isUser = message.role === "user";
   return (
     <article className={cn("flex gap-3", isUser ? "justify-end" : "justify-start")}>
@@ -372,7 +398,7 @@ function MessageBubble({ message }: { message: ChatMessage }) {
       <div className={cn("max-w-[82%] rounded-lg px-4 py-3 text-sm leading-6", isUser ? "bg-primary text-primary-foreground" : "border bg-surface")}>
         {isUser ? <div className="whitespace-pre-wrap">{message.content}</div> : <MarkdownContent content={message.content} />}
         {message.mode === "rag" && !isUser ? <Badge className="mt-3" variant="outline">RAG</Badge> : null}
-        {message.references?.length ? (
+        {showRagReferences && message.references?.length ? (
           <div className="mt-3 space-y-2 border-t pt-3">
             {message.references.map((reference) => (
               <details key={reference.index} className="text-xs text-muted-foreground">

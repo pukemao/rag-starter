@@ -1,8 +1,7 @@
-import { Activity, Database, FileStack, FileUp, MessageSquareText, Search, Trash2 } from "lucide-react";
+import { Activity, Database, FileStack, FileUp, MessageSquareText, Search, Settings, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 
-import { API_BASE_URL } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const navigation = [
@@ -14,6 +13,8 @@ const navigation = [
   { to: "/rag-chat", label: "RAG 调试", icon: MessageSquareText },
   { to: "/delete", label: "删除", icon: Trash2 }
 ];
+
+const mobileNavigation = [...navigation, { to: "/settings", label: "设置", icon: Settings }];
 
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
@@ -55,9 +56,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               );
             })}
           </nav>
-          <div className="border-t px-5 py-4">
-            <p className="text-xs font-medium text-muted-foreground">API Base URL</p>
-            <p className="mt-1 break-all text-xs text-foreground">{API_BASE_URL}</p>
+          <div className="border-t px-3 py-4">
+            <NavLink
+              to="/settings"
+              className={({ isActive }) =>
+                cn(
+                  "flex min-h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                  isActive && "bg-primary/10 text-primary"
+                )
+              }
+            >
+              <Settings className="h-4 w-4" aria-hidden="true" />
+              设置
+            </NavLink>
           </div>
         </div>
       </aside>
@@ -75,7 +86,7 @@ export function AppShell({ children }: { children: ReactNode }) {
               </div>
             </div>
             <nav className="flex gap-2 overflow-x-auto pb-1 app-scrollbar" aria-label="移动端导航">
-              {navigation.map((item) => {
+              {mobileNavigation.map((item) => {
                 const Icon = item.icon;
                 return (
                   <NavLink

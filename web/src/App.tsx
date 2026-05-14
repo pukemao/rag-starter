@@ -8,6 +8,7 @@ import { IndexPage } from "@/pages/IndexPage";
 import { KnowledgeBasePage } from "@/pages/KnowledgeBasePage";
 import { RagChatPage } from "@/pages/RagChatPage";
 import { SearchPage } from "@/pages/SearchPage";
+import { SettingsPage } from "@/pages/SettingsPage";
 
 export function App() {
   return (
@@ -21,6 +22,7 @@ export function App() {
         <Route path="/search" element={<SearchPage />} />
         <Route path="/rag-chat" element={<RagChatPage />} />
         <Route path="/delete" element={<DeletePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
     </AppShell>
