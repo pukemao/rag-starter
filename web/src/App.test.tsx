@@ -5,6 +5,7 @@ import { MemoryRouter } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 
 import { App } from "@/App";
+import type { ListDocumentsResponse } from "@/types/api";
 
 const now = "2026-05-14T00:00:00Z";
 let mockSettings = {
@@ -14,6 +15,7 @@ let mockSettings = {
   updated_at: now
 };
 let mockSessions: unknown[] = [];
+let mockDocuments: ListDocumentsResponse = { files: [], total_files: 0, total_chunks: 0 };
 let writeTextMock: ReturnType<typeof vi.fn>;
 
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -37,7 +39,7 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
     return new Response(JSON.stringify(mockSettings), { status: 200, headers: { "Content-Type": "application/json" } });
   }
   if (url.endsWith("/documents")) {
-    return new Response(JSON.stringify({ files: [], total_files: 0, total_chunks: 0 }), {
+    return new Response(JSON.stringify(mockDocuments), {
       status: 200,
       headers: { "Content-Type": "application/json" }
     });
@@ -220,6 +222,7 @@ describe("App", () => {
       updated_at: now
     };
     mockSessions = [];
+    mockDocuments = { files: [], total_files: 0, total_chunks: 0 };
     writeTextMock = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {
       value: { writeText: writeTextMock },
@@ -335,6 +338,39 @@ describe("App", () => {
     expect(screen.getByRole("switch", { name: "切换 RAG 参考段落显示" })).toHaveAttribute("aria-checked", "true");
     await userEvent.click(screen.getByRole("button", { name: "个性化" }));
     expect(screen.getByRole("button", { name: "上传图片" })).toBeInTheDocument();
+  });
+
+  it("renders interactive knowledge space for indexed files", async () => {
+    mockDocuments = {
+      total_files: 2,
+      total_chunks: 18,
+      files: [
+        {
+          filename: "产品方案.md",
+          source: "/docs/产品方案.md",
+          source_id: "doc-md",
+          file_hash: "hash-md",
+          chunk_count: 12,
+          chunk_ids: ["1"]
+        },
+        {
+          filename: "销售数据.xlsx",
+          source: "/docs/销售数据.xlsx",
+          source_id: "doc-xlsx",
+          file_hash: "hash-xlsx",
+          chunk_count: 6,
+          chunk_ids: ["2"]
+        }
+      ]
+    };
+
+    renderApp("/knowledge");
+
+    expect(await screen.findByRole("heading", { name: "知识库空间" })).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: "选择知识库文件 产品方案.md" }));
+    expect(screen.getByText("当前焦点")).toBeInTheDocument();
+    expect(screen.getAllByText("产品方案.md").length).toBeGreaterThan(0);
+    expect(screen.getByText(".md · 12 chunks")).toBeInTheDocument();
   });
 
   it("uses settings to hide rag references in chat route", async () => {

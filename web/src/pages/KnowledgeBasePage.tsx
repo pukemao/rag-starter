@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Database, FileText, FileUp, Loader2, RefreshCw, Search, Trash2, X } from "lucide-react";
-import { useMemo, useRef, useState, type ChangeEvent, type DragEvent, type FormEvent } from "react";
+import { Database, FileText, FileUp, Layers3, Loader2, RefreshCw, Search, Trash2, X } from "lucide-react";
+import { useMemo, useRef, useState, type CSSProperties, type ChangeEvent, type DragEvent, type FormEvent } from "react";
 
 import { EmptyState } from "@/components/EmptyState";
 import { ResultBlock } from "@/components/ResultBlock";
@@ -15,6 +15,16 @@ import { cn } from "@/lib/utils";
 import type { KnowledgeFile } from "@/types/api";
 
 const documentsQueryKey = ["documents"];
+
+type KnowledgeNode = {
+  file: KnowledgeFile;
+  extension: string;
+  color: string;
+  height: number;
+  left: number;
+  bottom: number;
+  zIndex: number;
+};
 
 export function KnowledgeBasePage() {
   const queryClient = useQueryClient();
@@ -57,6 +67,7 @@ export function KnowledgeBasePage() {
 
   const documents = documentsQuery.data?.files ?? [];
   const selectedFile = documents.find((file) => file.source_id === selectedSource || file.source === selectedSource) ?? null;
+  const knowledgeNodes = useMemo(() => buildKnowledgeNodes(documents), [documents]);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const results = searchMutation.data?.results ?? [];
 
@@ -167,6 +178,17 @@ export function KnowledgeBasePage() {
         <Metric label="文本块数量" value={documentsQuery.data?.total_chunks ?? 0} />
         <Metric label="查询范围" value={selectedFile ? selectedFile.filename : "全部文件"} />
       </section>
+
+      <KnowledgeSpace
+        nodes={knowledgeNodes}
+        documents={documents}
+        totalChunks={documentsQuery.data?.total_chunks ?? 0}
+        selectedSource={selectedSource}
+        selectedFile={selectedFile}
+        isLoading={documentsQuery.isLoading}
+        onSelect={(file) => setSelectedSource(file.source_id ?? file.source)}
+        onSearch={openSearch}
+      />
 
       <Panel>
         <PanelHeader className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
@@ -340,6 +362,174 @@ export function KnowledgeBasePage() {
   );
 }
 
+function KnowledgeSpace({
+  nodes,
+  documents,
+  totalChunks,
+  selectedSource,
+  selectedFile,
+  isLoading,
+  onSelect,
+  onSearch
+}: {
+  nodes: KnowledgeNode[];
+  documents: KnowledgeFile[];
+  totalChunks: number;
+  selectedSource: string | null;
+  selectedFile: KnowledgeFile | null;
+  isLoading: boolean;
+  onSelect: (file: KnowledgeFile) => void;
+  onSearch: (file?: KnowledgeFile) => void;
+}) {
+  const typeMetrics = useMemo(() => buildTypeMetrics(documents), [documents]);
+  const largestFile = documents.length ? [...documents].sort((left, right) => right.chunk_count - left.chunk_count)[0] : null;
+  const visibleCount = nodes.length;
+  const hiddenCount = Math.max(0, documents.length - visibleCount);
+
+  return (
+    <Panel className="overflow-hidden">
+      <PanelHeader className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
+              <Layers3 className="h-4 w-4" aria-hidden="true" />
+            </span>
+            <PanelTitle>知识库空间</PanelTitle>
+          </div>
+          <PanelDescription>文件显示为立体块，高度代表文本块规模，颜色代表文档类型。</PanelDescription>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline">{visibleCount ? `展示 ${visibleCount} 个文件` : "等待数据"}</Badge>
+          {hiddenCount ? <Badge variant="warning">还有 {hiddenCount} 个较小文件</Badge> : null}
+        </div>
+      </PanelHeader>
+      <PanelContent>
+        {isLoading ? (
+          <div className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+            正在生成知识库空间
+          </div>
+        ) : documents.length ? (
+          <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+            <div className="knowledge-space-stage" aria-label="知识库立体空间图">
+              <div className="knowledge-space-ground" aria-hidden="true" />
+              <div className="knowledge-space-grid" aria-hidden="true" />
+              {nodes.map((node, index) => {
+                const source = node.file.source_id ?? node.file.source;
+                const active = selectedSource === node.file.source_id || selectedSource === node.file.source;
+                const style = {
+                  "--tower-height": `${node.height}px`,
+                  "--tower-color": node.color,
+                  "--tower-delay": `${index * 35}ms`,
+                  left: `${node.left}%`,
+                  bottom: `${node.bottom}%`,
+                  zIndex: node.zIndex
+                } as CSSProperties;
+                return (
+                  <button
+                    key={source}
+                    type="button"
+                    className={cn("knowledge-space-node", active && "is-active")}
+                    style={style}
+                    aria-label={`选择知识库文件 ${node.file.filename}`}
+                    aria-pressed={active}
+                    onClick={() => onSelect(node.file)}
+                  >
+                    <span className="knowledge-space-prism" aria-hidden="true" />
+                    <span className="knowledge-space-node-label">
+                      <span className="block truncate font-medium">{node.file.filename}</span>
+                      <span className="mt-0.5 block text-xs text-muted-foreground">{node.extension} · {node.file.chunk_count} chunks</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <aside className="space-y-4" aria-label="知识库空间详情">
+              <div className="rounded-lg border bg-background p-4">
+                <p className="text-xs font-medium text-muted-foreground">当前焦点</p>
+                {selectedFile ? (
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <p className="break-words text-sm font-semibold">{selectedFile.filename}</p>
+                      <p className="mt-1 break-all text-xs leading-5 text-muted-foreground">{selectedFile.source}</p>
+                    </div>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <MetricInline label="文本块" value={selectedFile.chunk_count} />
+                      <MetricInline label="类型" value={extensionOf(selectedFile.filename || selectedFile.source)} />
+                    </div>
+                    <Button size="sm" className="w-full" onClick={() => onSearch(selectedFile)}>
+                      <Search className="h-4 w-4" aria-hidden="true" />
+                      查询此文件
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="mt-3 space-y-3">
+                    <p className="text-sm leading-6 text-muted-foreground">点击任意立体块，可把它设为当前查询范围。</p>
+                    <div className="grid grid-cols-2 gap-2 text-sm">
+                      <MetricInline label="总文件" value={documents.length} />
+                      <MetricInline label="总文本块" value={totalChunks} />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="rounded-lg border bg-background p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-sm font-semibold">类型分布</p>
+                  <span className="text-xs text-muted-foreground">按 chunk 排序</span>
+                </div>
+                <div className="mt-4 space-y-3">
+                  {typeMetrics.map((metric) => (
+                    <TypeMetricBar key={metric.extension} metric={metric} maxChunks={Math.max(...typeMetrics.map((item) => item.chunks))} />
+                  ))}
+                </div>
+              </div>
+
+              {largestFile ? (
+                <div className="rounded-lg border bg-background p-4">
+                  <p className="text-xs font-medium text-muted-foreground">最大文件</p>
+                  <p className="mt-2 break-words text-sm font-semibold">{largestFile.filename}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{largestFile.chunk_count} 个文本块</p>
+                </div>
+              ) : null}
+            </aside>
+          </div>
+        ) : (
+          <EmptyState title="暂无知识库空间" description="上传并索引文档后，这里会生成按文件规模展示的立体视图。" />
+        )}
+      </PanelContent>
+    </Panel>
+  );
+}
+
+function MetricInline({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-md bg-muted px-3 py-2">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 break-words font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+function TypeMetricBar({ metric, maxChunks }: { metric: { extension: string; files: number; chunks: number; color: string }; maxChunks: number }) {
+  const width = maxChunks ? Math.max(8, Math.round((metric.chunks / maxChunks) * 100)) : 0;
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3 text-xs">
+        <span className="flex min-w-0 items-center gap-2 font-medium">
+          <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: metric.color }} aria-hidden="true" />
+          <span className="truncate">{metric.extension}</span>
+        </span>
+        <span className="shrink-0 tabular-nums text-muted-foreground">{metric.files} 文件 · {metric.chunks}</span>
+      </div>
+      <div className="mt-2 h-2 overflow-hidden rounded-full bg-muted">
+        <div className="h-full rounded-full transition-[width] duration-300" style={{ width: `${width}%`, backgroundColor: metric.color }} />
+      </div>
+    </div>
+  );
+}
+
 function fileKey(file: File) {
   return `${file.name}:${file.size}:${file.lastModified}`;
 }
@@ -452,4 +642,64 @@ function Metric({ label, value }: { label: string; value: string | number }) {
       <p className="mt-2 break-words text-xl font-semibold text-foreground">{value}</p>
     </div>
   );
+}
+
+function buildKnowledgeNodes(documents: KnowledgeFile[]): KnowledgeNode[] {
+  const sorted = [...documents].sort((left, right) => right.chunk_count - left.chunk_count || left.filename.localeCompare(right.filename)).slice(0, 14);
+  const maxChunks = Math.max(1, ...sorted.map((file) => file.chunk_count));
+  const columns = sorted.length <= 4 ? Math.max(1, sorted.length) : sorted.length <= 9 ? 3 : 4;
+  const rows = Math.max(1, Math.ceil(sorted.length / columns));
+
+  return sorted.map((file, index) => {
+    const column = index % columns;
+    const row = Math.floor(index / columns);
+    const extension = extensionOf(file.filename || file.source);
+    return {
+      file,
+      extension,
+      color: colorForExtension(extension, index),
+      height: 42 + Math.round((file.chunk_count / maxChunks) * 118),
+      left: columns === 1 ? 50 : 13 + column * (74 / Math.max(1, columns - 1)),
+      bottom: rows === 1 ? 34 : 16 + (rows - 1 - row) * (60 / Math.max(1, rows - 1)),
+      zIndex: 20 + row * 5 + column
+    };
+  });
+}
+
+function buildTypeMetrics(documents: KnowledgeFile[]) {
+  const grouped = new Map<string, { extension: string; files: number; chunks: number; color: string }>();
+  documents.forEach((file, index) => {
+    const extension = extensionOf(file.filename || file.source);
+    const current = grouped.get(extension) ?? { extension, files: 0, chunks: 0, color: colorForExtension(extension, index) };
+    current.files += 1;
+    current.chunks += file.chunk_count;
+    grouped.set(extension, current);
+  });
+  return [...grouped.values()].sort((left, right) => right.chunks - left.chunks || right.files - left.files).slice(0, 6);
+}
+
+function extensionOf(filename: string) {
+  const match = filename.toLowerCase().match(/\.([a-z0-9]+)$/);
+  return match ? `.${match[1]}` : "unknown";
+}
+
+function colorForExtension(extension: string, fallbackIndex: number) {
+  const colors: Record<string, string> = {
+    ".md": "#0f766e",
+    ".markdown": "#0f766e",
+    ".txt": "#2563eb",
+    ".pdf": "#dc2626",
+    ".doc": "#1d4ed8",
+    ".docx": "#1d4ed8",
+    ".xls": "#15803d",
+    ".xlsx": "#15803d",
+    ".csv": "#047857",
+    ".ppt": "#c2410c",
+    ".pptx": "#c2410c",
+    ".html": "#7c3aed",
+    ".json": "#b45309",
+    unknown: "#64748b"
+  };
+  const fallback = ["#0891b2", "#4f46e5", "#be123c", "#9333ea", "#ca8a04", "#0d9488"];
+  return colors[extension] ?? fallback[fallbackIndex % fallback.length];
 }

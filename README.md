@@ -1,313 +1,145 @@
 # RAG Starter
 
-本项目提供一组基于 LangChain 的本地文档加载器、文档分割器、本地向量数据库封装和 FastAPI 接口。加载器位于 `src/loader`，按文档类型拆分为独立 Python 模块；分割器位于 `src/splitter`，提供统一的 chunk 切分入口；向量库位于 `src/vector_store`，默认使用本地持久化 Chroma。
+RAG Starter 是一个基于 LangChain、FastAPI、Chroma 和 React 的本地 RAG 应用模板。它提供从文档上传、内容提取、智能分割、向量入库、知识库检索，到 Agent 对话、临时附件读取、文档生成和前端用户界面的完整链路。
 
-## 安装
+项目适合用于学习 RAG 工程实践、快速搭建本地知识库问答系统，或作为二次开发的起点。
 
-基础依赖：
+## 特性
+
+- 多格式文档加载：支持 Markdown、TXT、PDF、Word、Excel、PPT、HTML、JSON、CSV、图片 OCR 等常见格式。
+- 文档感知分割：针对 Markdown、Word、Excel 做了专门优化，减少标题、表头和正文被错误拆开的情况。
+- 本地向量数据库：默认使用 Chroma 持久化到本地目录。
+- 可切换 Embedding：支持阿里云百炼 DashScope 和本地 Ollama embedding。
+- 文件去重：上传知识库文件时按文件 hash 拒绝重复文件，文件内 chunk 去重。
+- RAG 对话：检索本地知识库后调用 LLM 生成增强回答。
+- Agent 工具调用：模型可自动决定是否调用知识库检索、读取上传附件、查询天气、生成文档等工具。
+- 临时对话附件：用户可在聊天输入框上传文件，Agent 可读取附件内容，但不会写入知识库。
+- 文档生成：支持生成 Markdown、Word、Excel、PDF，并在前端提供下载入口。
+- 前端 Web：提供状态控制台、对话、知识库管理、设置等用户端页面。
+- 本地持久化：会话、消息和用户设置使用 SQLite 保存。
+
+## 技术栈
+
+后端：
+
+- Python 3.11+
+- FastAPI
+- LangChain / LangChain Core / LangChain Chroma
+- ChromaDB
+- SQLite / SQLAlchemy
+- DeepSeek OpenAI-compatible Chat API
+- DashScope OpenAI-compatible Embedding API
+- Ollama local embedding API
+
+前端：
+
+- Vite
+- React
+- TypeScript
+- Tailwind CSS
+- TanStack Query
+- React Router
+- lucide-react
+
+## 项目结构
+
+```text
+rag-starter/
+├── src/
+│   ├── agent/                 # Agent 编排和工具注册
+│   ├── api/                   # FastAPI 应用和接口 schema
+│   ├── chat_files/            # 对话临时上传文件管理
+│   ├── document_generator/    # Markdown/Word/Excel/PDF 文档生成
+│   ├── embedding/             # DashScope、Ollama、Hash embedding 实现
+│   ├── loader/                # 各类型文档加载器
+│   ├── rag/                   # RAG 问答服务
+│   ├── splitter/              # 文档分割器
+│   ├── storage/               # SQLite 会话和设置持久化
+│   └── vector_store/          # Chroma 向量库封装
+├── tests/                     # 后端单元测试
+├── web/                       # React 前端
+├── .env.example               # 环境变量示例
+├── pyproject.toml             # Python 项目配置
+└── README.md
+```
+
+## 快速开始
+
+### 1. 克隆项目
 
 ```bash
-pip install langchain-community langchain-core
-pip install langchain-text-splitters
-pip install langchain-chroma chromadb fastapi uvicorn python-multipart
-pip install langchain langchain-openai
+git clone https://github.com/<your-name>/rag-starter.git
+cd rag-starter
 ```
 
-不同格式会需要额外依赖。建议在需要覆盖办公文档、图片 OCR、EPUB 等格式时安装：
+### 2. 创建 Python 虚拟环境
 
 ```bash
-pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd python-docx python-pptx nbformat pillow pytesseract pysrt
+python -m venv .venv
+source .venv/bin/activate
 ```
 
-## 统一配置
+Windows PowerShell：
 
-项目运行默认值集中在 [src/config.py](src/config.py)，API、分割器、embedding 和本地 Chroma 向量库都从这里读取默认配置。需要覆盖默认值时，可以通过环境变量配置：
+```powershell
+.venv\Scripts\Activate.ps1
+```
 
-| 环境变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `RAG_API_TITLE` | `RAG Starter API` | FastAPI 标题 |
-| `RAG_API_VERSION` | `0.1.0` | FastAPI 版本 |
-| `RAG_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173,http://localhost:5174,http://127.0.0.1:5174` | 允许访问 API 的前端来源，逗号分隔 |
-| `RAG_SPLITTER_TYPE` | `recursive` | 默认分割器 |
-| `RAG_CHUNK_SIZE` | `1000` | 默认 chunk 大小 |
-| `RAG_CHUNK_OVERLAP` | `200` | 默认 chunk 重叠长度 |
-| `RAG_EMBEDDING_PROVIDER` | `dashscope` | 默认 embedding 提供方 |
-| `DASHSCOPE_API_KEY` | 空 | 阿里云百炼 API Key，写入向量库和检索时必填 |
-| `DASHSCOPE_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | 百炼 OpenAI 兼容接口地址 |
-| `DASHSCOPE_EMBEDDING_MODEL` | `text-embedding-v4` | 默认 embedding 模型 |
-| `DASHSCOPE_EMBEDDING_DIMENSION` | `2048` | `text-embedding-v4` 输出维度 |
-| `DASHSCOPE_EMBEDDING_BATCH_SIZE` | `10` | 单次 embedding 请求文本数量，百炼要求不超过 10 |
-| `DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS` | `60.0` | embedding 请求超时时间 |
-| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | 本地 Ollama 服务地址，`RAG_EMBEDDING_PROVIDER=ollama` 时使用 |
-| `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:4b` | 本地 Ollama embedding 模型名称 |
-| `OLLAMA_EMBEDDING_DIMENSION` | `2560` | `qwen3-embedding:4b` 向量维度 |
-| `OLLAMA_EMBEDDING_BATCH_SIZE` | `10` | 单次发送给 Ollama 的文本数量 |
-| `OLLAMA_EMBEDDING_TIMEOUT_SECONDS` | `120.0` | Ollama embedding 请求超时时间 |
-| `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
-| `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
-| `RAG_DATABASE_URL` | `sqlite:///storage/app.db` | 会话、消息和用户设置的结构化数据库 |
-| `RAG_TOP_K` | `2` | RAG 对话默认检索段落数 |
-| `RAG_SYSTEM_PROMPT` | 知识库问答助手提示词 | RAG 对话默认 system prompt |
-| `RAG_LLM_PROVIDER` | `deepseek` | 默认 LLM 提供方 |
-| `DEEPSEEK_API_KEY` | 空 | DeepSeek API Key，调用 `/rag/chat` 时必填 |
-| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek OpenAI 兼容接口地址 |
-| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | DeepSeek 对话模型 |
-| `DEEPSEEK_TEMPERATURE` | `0.2` | 生成温度 |
-| `DEEPSEEK_MAX_TOKENS` | `1024` | 单次回答最大 token 数 |
-| `DEEPSEEK_TIMEOUT_SECONDS` | `60.0` | LLM 请求超时时间 |
-| `RAG_DEFAULT_CITY` | `上海` | Agent 天气工具在用户未提供城市时使用的默认城市 |
-| `RAG_TIMEZONE` | `Asia/Shanghai` | 当前日期工具使用的系统时区 |
-| `RAG_WEATHER_GEOCODING_URL` | Open-Meteo geocoding | 天气工具城市编码接口 |
-| `RAG_WEATHER_FORECAST_URL` | Open-Meteo forecast | 天气工具天气预报接口 |
-| `RAG_WEATHER_TIMEOUT_SECONDS` | `10.0` | 天气工具请求超时时间 |
-| `RAG_GENERATED_DOCUMENT_DIRECTORY` | `storage/generated_documents` | Agent 生成文档的本地存储目录 |
-| `RAG_CHAT_UPLOAD_DIRECTORY` | `storage/chat_uploads` | 对话输入框临时上传文件目录，不写入知识库 |
-| `RAG_CHAT_UPLOAD_MAX_SIZE_MB` | `20` | 单个对话临时上传文件最大体积 |
-| `RAG_CHAT_FILE_DEFAULT_MAX_CHARS` | `6000` | 读取上传文档工具默认返回最大字符数 |
+### 3. 安装后端依赖
 
-本地开发可以在项目根目录创建 `.env`，项目启动时会自动读取：
+基础安装：
 
 ```bash
-DEEPSEEK_API_KEY="sk-..."
-DASHSCOPE_API_KEY="sk-..."
+pip install -e .
 ```
 
-`.env` 已加入 `.gitignore`，不要把真实 API Key 提交到远程仓库。
-
-## 快速使用
-
-```python
-from src.loader import load_documents, get_loader, supported_extensions
-
-docs = load_documents("docs/report.pdf")
-loader = get_loader("docs/table.csv")
-print(supported_extensions())
-```
-
-按目录加载：
-
-```python
-from src.loader.directory import load_directory
-
-docs = load_directory("docs", recursive=True)
-```
-
-文档分割：
-
-```python
-from src.loader import load_documents
-from src.splitter import split_documents
-
-docs = load_documents("docs/report.pdf")
-chunks = split_documents(
-    docs,
-    chunk_size=1000,
-    chunk_overlap=200,
-)
-```
-
-加载并分割：
-
-```python
-from src.splitter import load_and_split_documents
-
-chunks = load_and_split_documents("docs/report.pdf")
-```
-
-Markdown 文件在 `load_and_split_documents()` 中会优先按标题层级聚合，再做 recursive 二次切分，避免标题和正文落入不同 chunk。切分后的 metadata 会保留 `h1`、`h2` 等标题层级，提升 RAG 检索上下文完整性。
-
-Word 文件在 `load_and_split_documents()` 中会使用标题感知切分：`.docx` 通过 `python-docx` 读取标题样式，`.doc` 通过 Unstructured elements 的标题元数据聚合章节。每个 section 会保留标题层级和正文，recursive 二次切分后也会给子 chunk 补回标题上下文，避免 RAG 检索命中正文时缺少所属章节信息。
-
-Excel 文件在 `load_and_split_documents()` 中会使用表格感知切分：按工作表读取 `.xls`、`.xlsx`，自动识别表头，把文件名、工作表名、表头和完整数据行一起写入 chunk。这样可以避免通用文本切分把表头和单元格内容拆开，导致 RAG 检索命中某一行时缺少列名语义。`.xlsx` 依赖 `openpyxl`，`.xls` 依赖 `xlrd`。
-
-完整索引链路：
-
-```python
-from src.vector_store import VectorStoreService
-
-service = VectorStoreService()
-result = service.index_file("docs/report.pdf", source_label="report.pdf")
-print(result.ids, result.skipped_duplicates)
-results = service.search("项目背景", k=3)
-```
-
-默认 embedding 使用阿里云百炼 `text-embedding-v4`，通过 LangChain `OpenAIEmbeddings` 连接百炼 OpenAI 兼容接口，默认输出 2048 维向量。也支持切换到本地 Ollama embedding，例如：
+如果需要尽可能覆盖更多文档格式，建议安装 loader 可选依赖：
 
 ```bash
+pip install -e ".[loaders]"
+```
+
+### 4. 配置环境变量
+
+复制环境变量示例：
+
+```bash
+cp .env.example .env
+```
+
+至少需要配置一个 LLM API Key：
+
+```env
+DEEPSEEK_API_KEY=your_deepseek_api_key
+```
+
+Embedding 可选择 DashScope 或 Ollama。本地免费方案推荐 Ollama：
+
+```env
 RAG_EMBEDDING_PROVIDER=ollama
 OLLAMA_BASE_URL=http://127.0.0.1:11434
 OLLAMA_EMBEDDING_MODEL=qwen3-embedding:4b
 OLLAMA_EMBEDDING_DIMENSION=2560
 ```
 
-使用 Ollama 前需要先启动本地服务并确保模型已存在：
+如果使用 DashScope：
 
-```bash
-ollama serve
-ollama list
+```env
+RAG_EMBEDDING_PROVIDER=dashscope
+DASHSCOPE_API_KEY=your_dashscope_api_key
+DASHSCOPE_EMBEDDING_MODEL=text-embedding-v4
+DASHSCOPE_EMBEDDING_DIMENSION=2048
 ```
 
-如果 `ollama pull qwen3-embedding:4b` 出现 `registry.ollama.ai` 超时，这是模型拉取网络问题，不是项目代码问题。模型成功下载后，项目会通过本地 `/api/embed` 接口调用，不再消耗百炼 embedding 额度。切换 embedding 模型或维度后，需要删除旧的 Chroma 数据并重新索引知识库，因为同一个 Chroma collection 不能混用不同维度的向量。
-
-RAG 增强对话链路：
-
-```python
-from src.rag import RagService
-
-service = RagService()
-result = service.answer("项目背景是什么？", k=3)
-print(result.answer)
-print(result.references)
-```
-
-流程为：用户问题 -> LangChain embedding -> LangChain Chroma 相似度检索 -> 返回 top-k 知识库段落 -> 将用户问题和参考段落整合为最终 prompt -> LangChain ChatOpenAI 兼容方式调用 DeepSeek LLM -> 返回自然回答、prompt 和引用段落。
-
-Agent 智能对话链路：
-
-```python
-from src.agent import AgentChatService
-
-service = AgentChatService()
-result = service.answer("根据我上传的简历总结项目经历", k=2)
-print(result.answer)
-print(result.used_rag)
-print(result.references)
-```
-
-流程为：用户问题 -> Agent 执行器 -> 模型根据系统提示词和工具描述判断是否调用工具 -> 如需检索则调用 `search_knowledge_base` 查询本地 Chroma 知识库；如需读取对话输入框临时上传的附件，则调用 `read_uploaded_document`；如需天气则调用 `query_weather`，必要时先调用 `get_current_date` 或 `get_current_location_city` 补齐日期和默认城市；如需导出文档则先整理要写入文档的内容，再调用 `generate_document` 生成可下载文件 -> 模型整合工具结果和用户问题生成最终回答。工具描述通过 `@tool("tool_name", description=...)` 显式声明，描述中包含工具能力、适合调用场景、不应调用场景、参数说明和结果输出说明。后续新增工具统一在 `src/agent/tools.py` 注册。
-
-当前 Agent 工具：
-
-- `search_knowledge_base(query, k=2)`：检索本地知识库段落。
-- `get_current_date()`：返回 `RAG_TIMEZONE` 下的当前日期，用于把“今天、明天、后天”等相对日期换算为明确日期。
-- `get_current_location_city()`：返回 `RAG_DEFAULT_CITY` 配置的默认城市。它不是浏览器定位，也不会通过服务器 IP 猜测用户真实位置。
-- `query_weather(city, date)`：查询指定城市和 `YYYY-MM-DD` 日期的天气预报，返回天气概况、气温、降水概率和风速；默认使用 Open-Meteo 公开接口，无需 API Key。
-- `generate_document(content, document_type, filename="")`：把模型整理好的字符串内容生成可下载文档，支持 `markdown`、`word`、`excel`、`pdf`。用户指定文件名时传入 `filename`，未指定时系统自动生成默认文件名。Word/PDF/Markdown 推荐传 Markdown 兼容内容，Excel 推荐传 Markdown 表格、CSV 或 JSON 数组。
-- `read_uploaded_document(file_id="", query="", max_chars=6000)`：读取用户在对话输入框临时上传的文件内容。当前会话只有一个附件时可省略 `file_id`；多个附件时需要指定 `file_id`。该工具不会查询知识库，也不会把文件写入 Chroma。
-
-生成文档默认保存到 `storage/generated_documents`，并通过附件返回给前端。对话页面会在模型回答下方显示文件卡片，用户可直接在浏览器下载。生成文档附件也会随聊天消息持久化到 SQLite，刷新后仍可查看下载入口。
-
-对话临时上传文件默认保存到 `storage/chat_uploads`。上传后后端会复用现有 loader 和 splitter 提取文本 chunk，供 `read_uploaded_document` 工具按问题读取相关片段。它与知识库上传索引是两条链路：临时附件只服务当前对话，不会长期进入向量库。
-
-DeepSeek V4 thinking mode 与工具调用同时使用时，工具调用后的下一次请求必须把上一轮 assistant 消息中的 `reasoning_content`、`tool_calls` 等原始字段完整回传。项目内置 `DeepSeekToolCallingAgentExecutor` 直接使用 OpenAI 兼容接口执行工具调用循环，保留原始 assistant payload，再追加 tool 结果继续请求，因此不需要关闭 thinking mode。非 DeepSeek 提供方仍可回退到 LangChain `create_agent`。
-
-索引入库前会执行文件内 chunk 去重：同一个文件切出的重复 chunk 只写入一次；不同文件里的相同 chunk 会分别保留，方便后续删除某个上传文件时只删除该文件对应的数据。
-
-上传索引会先计算文件内容 SHA-256，并检查向量库 metadata 中是否已存在相同 `file_hash`。重复文件不会入库，接口返回 `409`，响应体中包含 `message`、`filename` 和 `file_hash`。
-
-写入本地向量库：
-
-```python
-from src.vector_store import VectorStoreService
-
-service = VectorStoreService()
-ids = service.add_file("docs/report.pdf")
-results = service.search("检索问题", k=3)
-service.delete(ids=ids)
-```
-
-启动 FastAPI：
+### 5. 启动后端
 
 ```bash
 uvicorn src.api.main:app --reload
 ```
 
-接口：
+默认 API 地址：`http://127.0.0.1:8000`
 
-- `GET /health`: 健康检查
-- `GET /documents`: 按文件维度列出已入库知识库文件和 chunk 数量
-- `POST /index`: 上传文件，执行提取、分割并写入向量库
-- `POST /documents`: 加载、分割并写入本地向量库
-- `DELETE /documents`: 按 `ids`、`source_id` 或 `source` 删除向量库记录
-- `POST /search`: 相似度检索
-- `POST /chat`: 普通大模型对话，支持传入历史上下文
-- `POST /rag/chat`: RAG 增强对话，基于本地知识库检索结果调用 DeepSeek
-- `POST /agent/chat`: Agent 智能对话，由模型自动判断是否调用知识库检索工具
-- `POST /chat/files`: 上传对话临时附件，返回 `file_id`、文件名、状态和 chunk 数
-- `GET /generated-documents/{file_id}/download`: 下载 Agent 生成的 Markdown、Word、Excel 或 PDF 文件
-- `GET /chat/sessions`: 列出本地持久化会话
-- `GET /chat/sessions/{session_id}`: 获取会话和消息详情
-- `DELETE /chat/sessions/{session_id}`: 删除会话和消息
-- `GET /settings`: 获取本地持久化用户设置
-- `PUT /settings`: 更新本地持久化用户设置
-
-`POST /index` 会返回每个文件的 `filename`、`source_id`、`ids`、写入 chunk 数量、输入 chunk 数量和跳过的重复 chunk 数量，方便后续追踪、删除和观察去重效果。若上传重复文件，会返回类似：
-
-```json
-{
-  "detail": {
-    "message": "文件 report.pdf 已存在，不允许重复上传",
-    "filename": "report.pdf",
-    "file_hash": "..."
-  }
-}
-```
-
-示例：
-
-```bash
-curl -X POST http://127.0.0.1:8000/index \
-  -F "files=@docs/report.pdf" \
-  -F "files=@docs/notes.txt" \
-  -F "splitter_type=recursive" \
-  -F "chunk_size=1000" \
-  -F "chunk_overlap=200"
-
-curl http://127.0.0.1:8000/documents
-
-curl -X POST http://127.0.0.1:8000/documents \
-  -H "Content-Type: application/json" \
-  -d '{"path":"docs/report.pdf","chunk_size":1000,"chunk_overlap":200}'
-
-curl -X POST http://127.0.0.1:8000/search \
-  -H "Content-Type: application/json" \
-  -d '{"query":"项目背景","k":3}'
-
-export DEEPSEEK_API_KEY="sk-..."
-
-curl -X POST http://127.0.0.1:8000/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"你好","history":[]}'
-
-curl -X POST http://127.0.0.1:8000/rag/chat \
-  -H "Content-Type: application/json" \
-  -d '{"question":"项目背景是什么？","k":3,"history":[]}'
-
-curl -X POST http://127.0.0.1:8000/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"根据知识库总结项目背景","k":2,"history":[]}'
-
-curl -X POST http://127.0.0.1:8000/chat/files \
-  -F "file=@docs/report.pdf"
-```
-
-`POST /rag/chat` 响应包含 `answer`、`question`、实际发送给 LLM 的 `prompt`、`references`、`model` 和 `usage`。如果没有配置 `DEEPSEEK_API_KEY`，接口会返回 `500` 并提示设置环境变量。
-
-`POST /agent/chat` 响应包含 `answer`、`question`、`prompt`、`used_rag`、`references`、`attachments`、`model`、`usage` 和持久化后的 `session`。`used_rag=true` 表示本轮 Agent 调用了知识库工具；`used_rag=false` 表示模型判断无需检索，直接完成普通对话。`attachments` 用于返回 `generate_document` 生成的文件下载信息，例如：
-
-```json
-{
-  "file_id": "f3...",
-  "filename": "项目总结.docx",
-  "document_type": "word",
-  "mime_type": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  "download_url": "/generated-documents/f3.../download",
-  "size": 12345,
-  "created_at": "2026-05-14T00:00:00+00:00"
-}
-```
-
-## 前端 Web
-
-前端位于 [web](web)，技术栈为 Vite、React、TypeScript、Tailwind CSS、shadcn/ui 风格组件、TanStack Query 和 React Router。
-
-启动后端：
-
-```bash
-uvicorn src.api.main:app --reload
-```
-
-启动前端：
+### 6. 启动前端
 
 ```bash
 cd web
@@ -315,35 +147,298 @@ npm install
 npm run dev
 ```
 
-默认前端地址为 `http://127.0.0.1:5173`。默认 API 地址为 `http://127.0.0.1:8000`，可通过 `web/.env.local` 覆盖：
+默认前端地址：`http://127.0.0.1:5173`
 
-```bash
+如需覆盖 API 地址，可在 `web/.env.local` 中配置：
+
+```env
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-当前页面包含：
+## 使用 Ollama 本地 Embedding
 
-- 状态：系统控制台，聚合 `/health`、知识库文件、会话和用户设置数据，以指标卡、文件类型分布、chunk 规模、会话活跃度和系统链路检查展示当前运行状态
-- 对话：用户端 Agent 智能对话页，支持新增会话、搜索会话、本地存储会话、删除会话、上下文记忆；输入框左侧 `+` 使用可扩展菜单，当前支持“添加文件”，也支持拖拽文件到输入区域上传临时附件；输入框不再要求用户手动选择 `LLM/RAG`，后端 Agent 会自动判断是否需要调用知识库检索工具、临时附件读取工具、天气工具或文档生成工具；模型回答按 Markdown 展示；生成文档会以附件卡片显示并支持浏览器下载；可读取用户设置决定是否显示 RAG 参考段落和聊天背景
-- 知识库：用户端知识库管理页，主页面展示文件列表；上传文件和查询知识库通过按钮弹出表单完成；上传支持拖拽和点击选择，可批量上传；查询结果在查询弹窗内展示；按文件操作优先使用 `source_id`
-- 设置：左下角设置入口进入用户设置页；设置页使用全浏览器工作区布局，包含“配置”和“个性化”设置项。“配置”用于控制 RAG 回答是否显示参考段落；“个性化”用于上传、预览、调整透明度和删除聊天背景图片；设置通过后端持久化到 SQLite
+项目支持通过 Ollama 调用本地 embedding 模型，例如 `qwen3-embedding:4b`。
 
-会话、消息和用户设置默认写入 `storage/app.db`，由后端统一管理，不再依赖浏览器 `localStorage`。向量数据仍由 Chroma 持久化到 `storage/chroma`。
+确认 Ollama 服务运行：
 
-前端已移除早期用于接口调试的“索引”“检索”“RAG 调试”和“删除”页面；相关能力保留在后端 API 和知识库/对话业务页面中。
+```bash
+ollama list
+```
 
-## 支持格式
+如果执行 `ollama serve` 时出现：
 
-当前按本地文件扩展名注册了以下类型：
+```text
+listen tcp 127.0.0.1:11434: bind: address already in use
+```
 
-`txt`, `log`, `csv`, `tsv`, `json`, `jsonl`, `ndjson`, `pdf`, `md`, `markdown`, `mdx`, `html`, `htm`, `mht`, `mhtml`, `xml`, `doc`, `docx`, `ppt`, `pptx`, `xls`, `xlsx`, `eml`, `msg`, `chm`, `epub`, `odt`, `org`, `rst`, `rtf`, `srt`, `jpg`, `jpeg`, `png`, `tif`, `tiff`, `bmp`, `heic`, `ipynb`, `toml`, `yaml`, `yml`，以及常见源码文件。
+说明 Ollama 服务已经在本机运行，不需要重复启动。
 
-更多说明见 [src/loader/README.md](src/loader/README.md) 和 [src/splitter/README.md](src/splitter/README.md)。
+如果模型尚未下载：
+
+```bash
+ollama pull qwen3-embedding:4b
+```
+
+注意：切换 embedding 模型或向量维度后，必须删除旧的 Chroma 数据并重新索引知识库，因为不同 embedding 模型的向量空间不兼容。
+
+```bash
+rm -rf storage/chroma
+```
+
+## 核心工作流
+
+### 知识库索引
+
+用户上传文件后，系统会执行：
+
+```text
+上传文件 -> 文档加载 -> 文档分割 -> 文件去重/chunk 去重 -> embedding -> 写入 Chroma
+```
+
+### RAG 对话
+
+```text
+用户问题 -> embedding -> Chroma 相似度检索 -> 参考段落 -> Prompt 组装 -> LLM -> 回答
+```
+
+### Agent 对话
+
+Agent 会根据用户问题和工具描述自动判断是否调用工具：
+
+- `search_knowledge_base`：检索本地知识库。
+- `read_uploaded_document`：读取当前对话临时上传的文件。
+- `generate_document`：生成 Markdown、Word、Excel、PDF 文档。
+- `get_current_date`：获取当前日期。
+- `get_current_location_city`：获取默认城市。
+- `query_weather`：查询天气。
+
+### 临时对话附件
+
+聊天输入框左侧的 `+` 菜单支持添加文件，也支持拖拽文件到输入区域。临时附件只服务当前对话，不会写入知识库，也不会进入 Chroma。
+
+```text
+上传临时文件 -> 加载并分割 -> Agent 工具按需读取 -> 回答问题
+```
+
+### 文档生成
+
+Agent 可根据用户要求生成可下载文档：
+
+```text
+用户要求生成文档 -> 模型整理内容 -> generate_document 工具 -> 保存文件 -> 前端附件卡片下载
+```
+
+支持格式：
+
+- Markdown：`.md`
+- Word：`.docx`
+- Excel：`.xlsx`
+- PDF：`.pdf`
+
+## API 概览
+
+### 系统
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/health` | 健康检查 |
+
+### 知识库
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/documents` | 列出已入库知识库文件 |
+| `POST` | `/index` | 上传文件并索引到向量库 |
+| `POST` | `/documents` | 按本地路径加载并索引文件 |
+| `DELETE` | `/documents` | 按 `ids`、`source_id` 或 `source` 删除向量记录 |
+| `POST` | `/search` | 相似度检索 |
+
+### 对话
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/chat` | 普通 LLM 对话 |
+| `POST` | `/rag/chat` | RAG 增强对话 |
+| `POST` | `/agent/chat` | Agent 智能对话 |
+| `POST` | `/chat/files` | 上传对话临时附件 |
+| `GET` | `/chat/sessions` | 列出会话 |
+| `GET` | `/chat/sessions/{session_id}` | 获取会话详情 |
+| `DELETE` | `/chat/sessions/{session_id}` | 删除会话 |
+
+### 文档生成
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/generated-documents/{file_id}/download` | 下载 Agent 生成的文档 |
+
+### 设置
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/settings` | 获取用户设置 |
+| `PUT` | `/settings` | 更新用户设置 |
+
+## API 示例
+
+上传并索引知识库文件：
+
+```bash
+curl -X POST http://127.0.0.1:8000/index \
+  -F "files=@docs/report.pdf" \
+  -F "splitter_type=recursive" \
+  -F "chunk_size=1000" \
+  -F "chunk_overlap=200"
+```
+
+检索知识库：
+
+```bash
+curl -X POST http://127.0.0.1:8000/search \
+  -H "Content-Type: application/json" \
+  -d '{"query":"项目背景","k":3}'
+```
+
+Agent 对话：
+
+```bash
+curl -X POST http://127.0.0.1:8000/agent/chat \
+  -H "Content-Type: application/json" \
+  -d '{"message":"根据知识库总结项目背景","k":2,"history":[]}'
+```
+
+上传对话临时附件：
+
+```bash
+curl -X POST http://127.0.0.1:8000/chat/files \
+  -F "file=@docs/report.pdf"
+```
+
+## 配置说明
+
+所有运行配置集中在 [src/config.py](src/config.py)，可通过环境变量覆盖。
+
+### 常用配置
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RAG_API_TITLE` | `RAG Starter API` | FastAPI 标题 |
+| `RAG_CORS_ORIGINS` | `http://localhost:5173,...` | 允许访问 API 的前端来源，逗号分隔 |
+| `RAG_DATABASE_URL` | `sqlite:///storage/app.db` | SQLite 数据库地址 |
+| `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
+| `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
+| `RAG_TOP_K` | `2` | 默认检索段落数 |
+| `RAG_SPLITTER_TYPE` | `recursive` | 默认分割器 |
+| `RAG_CHUNK_SIZE` | `1000` | 默认 chunk 大小 |
+| `RAG_CHUNK_OVERLAP` | `200` | 默认 chunk 重叠 |
+
+### LLM 配置
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RAG_LLM_PROVIDER` | `deepseek` | LLM 提供方 |
+| `DEEPSEEK_API_KEY` | 空 | DeepSeek API Key |
+| `DEEPSEEK_BASE_URL` | `https://api.deepseek.com` | DeepSeek OpenAI 兼容地址 |
+| `DEEPSEEK_MODEL` | `deepseek-v4-pro` | 对话模型 |
+| `DEEPSEEK_TEMPERATURE` | `0.2` | 生成温度 |
+| `DEEPSEEK_MAX_TOKENS` | `1024` | 最大输出 token |
+
+### Embedding 配置
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RAG_EMBEDDING_PROVIDER` | `dashscope` | `dashscope`、`ollama` 或 `hash` |
+| `DASHSCOPE_API_KEY` | 空 | DashScope API Key |
+| `DASHSCOPE_BASE_URL` | `https://dashscope.aliyuncs.com/compatible-mode/v1` | DashScope OpenAI 兼容地址 |
+| `DASHSCOPE_EMBEDDING_MODEL` | `text-embedding-v4` | DashScope embedding 模型 |
+| `DASHSCOPE_EMBEDDING_DIMENSION` | `2048` | DashScope 向量维度 |
+| `DASHSCOPE_EMBEDDING_BATCH_SIZE` | `10` | DashScope 单批数量 |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama 服务地址 |
+| `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:4b` | Ollama embedding 模型 |
+| `OLLAMA_EMBEDDING_DIMENSION` | `2560` | Ollama 向量维度 |
+| `OLLAMA_EMBEDDING_BATCH_SIZE` | `10` | Ollama 单批数量 |
+
+### 文件目录配置
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RAG_GENERATED_DOCUMENT_DIRECTORY` | `storage/generated_documents` | Agent 生成文档目录 |
+| `RAG_CHAT_UPLOAD_DIRECTORY` | `storage/chat_uploads` | 对话临时附件目录 |
+| `RAG_CHAT_UPLOAD_MAX_SIZE_MB` | `20` | 单个临时附件最大体积 |
+
+## 支持的文档格式
+
+已注册的文件扩展名包括：
+
+```text
+txt, log, csv, tsv, json, jsonl, ndjson, pdf, md, markdown, mdx,
+html, htm, mht, mhtml, xml, doc, docx, ppt, pptx, xls, xlsx,
+eml, msg, chm, epub, odt, org, rst, rtf, srt,
+jpg, jpeg, png, tif, tiff, bmp, heic, ipynb, toml, yaml, yml,
+以及常见源码文件
+```
+
+更多加载器和分割器说明见：
+
+- [src/loader/README.md](src/loader/README.md)
+- [src/splitter/README.md](src/splitter/README.md)
+
+## 前端页面
+
+前端位于 [web](web)，当前包含：
+
+- 状态：系统控制台，展示知识库、会话、系统链路等状态。
+- 对话：Agent 对话页，支持上下文记忆、临时附件上传、文档生成下载、Markdown 渲染。
+- 知识库：文件列表、上传、查询、删除，并提供按文件类型和 chunk 规模生成的立体知识库空间视图，点击文件块可快速限定查询范围。
+- 设置：RAG 参考段落显示开关、聊天背景个性化配置。
 
 ## 测试
 
-测试使用 Python 标准库 `unittest`，不依赖真实 LangChain 安装即可验证注册表、懒导入逻辑和 splitter 封装：
+后端测试：
 
 ```bash
 PYTHONPATH=. python -m unittest discover -s tests
 ```
+
+前端测试：
+
+```bash
+cd web
+npm test
+```
+
+前端构建：
+
+```bash
+cd web
+npm run build
+```
+
+## 数据与安全
+
+- `.env` 包含密钥，已被 `.gitignore` 忽略，不要提交真实 API Key。
+- `storage/` 保存本地数据库、向量库、临时上传文件和生成文档，默认不应提交到仓库。
+- 更换 embedding 模型后，请删除旧向量库并重新索引。
+- 对话临时附件不会自动进入知识库。
+- 生成文档接口仅返回本地生成文件下载地址。
+
+## Roadmap
+
+- 支持更多 LLM provider。
+- 支持临时附件的会话级生命周期清理。
+- 支持更多文档生成模板。
+- 支持 Docker Compose 一键启动。
+- 支持可配置的 Agent 工具开关和权限控制。
+- 增加端到端测试。
+
+## Contributing
+
+欢迎提交 issue 和 pull request。建议在提交前运行：
+
+```bash
+PYTHONPATH=. python -m unittest discover -s tests
+cd web && npm test && npm run build
+```
+
+## License
+
+本项目尚未声明开源许可证。正式发布到 GitHub 前，建议添加 `LICENSE` 文件，例如 MIT、Apache-2.0 或其他符合你预期的许可证。
