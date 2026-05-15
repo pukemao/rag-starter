@@ -71,6 +71,17 @@ class EmbeddingSettings:
     dimension: int = _get_int("DASHSCOPE_EMBEDDING_DIMENSION", _get_int("RAG_EMBEDDING_DIMENSION", 2048))
     batch_size: int = _get_int("DASHSCOPE_EMBEDDING_BATCH_SIZE", 10)
     timeout_seconds: float = _get_float("DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS", 60.0)
+    ollama_base_url: str = getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434")
+    ollama_model: str = getenv("OLLAMA_EMBEDDING_MODEL", "qwen3-embedding:4b")
+    ollama_dimension: int = _get_int("OLLAMA_EMBEDDING_DIMENSION", _get_int("RAG_EMBEDDING_DIMENSION", 2560))
+    ollama_batch_size: int = _get_int("OLLAMA_EMBEDDING_BATCH_SIZE", 10)
+    ollama_timeout_seconds: float = _get_float("OLLAMA_EMBEDDING_TIMEOUT_SECONDS", 120.0)
+
+    @property
+    def active_dimension(self) -> int:
+        if self.provider.strip().lower() == "ollama":
+            return self.ollama_dimension
+        return self.dimension
 
 
 @dataclass(frozen=True, slots=True)

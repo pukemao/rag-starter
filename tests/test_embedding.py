@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 import unittest
+from unittest.mock import patch
 
-from src.embedding import DashScopeEmbeddings, HashEmbeddings
+from src.embedding import DashScopeEmbeddings, HashEmbeddings, OllamaEmbeddings
 
 
 class HashEmbeddingsTests(unittest.TestCase):
@@ -38,6 +40,37 @@ class DashScopeEmbeddingsTests(unittest.TestCase):
     def test_rejects_batch_size_larger_than_dashscope_limit(self):
         with self.assertRaisesRegex(ValueError, "1 到 10"):
             DashScopeEmbeddings(api_key="sk-test", batch_size=11, embeddings=FakeEmbeddings())
+
+
+class FakeOllamaResponse:
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False
+
+    def read(self):
+        return json.dumps({"embeddings": [[1, 2], [3, 4]]}).encode()
+
+
+class OllamaEmbeddingsTests(unittest.TestCase):
+    def test_calls_ollama_embed_api(self):
+        captured = {}
+
+        def fake_urlopen(request, timeout):
+            captured["url"] = request.full_url
+            captured["body"] = json.loads(request.data.decode())
+            captured["timeout"] = timeout
+            return FakeOllamaResponse()
+
+        embeddings = OllamaEmbeddings(base_url="http://localhost:11434/", model="qwen3-embedding:4b", dimension=2, batch_size=2, timeout=5)
+        with patch("urllib.request.urlopen", fake_urlopen):
+            vectors = embeddings.embed_documents(["hello", "world"])
+
+        self.assertEqual(vectors, [[1.0, 2.0], [3.0, 4.0]])
+        self.assertEqual(captured["url"], "http://localhost:11434/api/embed")
+        self.assertEqual(captured["body"], {"model": "qwen3-embedding:4b", "input": ["hello", "world"]})
+        self.assertEqual(captured["timeout"], 5)
 
 
 if __name__ == "__main__":

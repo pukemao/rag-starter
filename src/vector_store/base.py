@@ -28,7 +28,7 @@ class VectorStoreConfig:
 
     persist_directory: str = settings.vector_store.persist_directory
     collection_name: str = settings.vector_store.collection_name
-    embedding_dimension: int = settings.embedding.dimension
+    embedding_dimension: int = settings.embedding.active_dimension
 
 
 @dataclass(frozen=True, slots=True)

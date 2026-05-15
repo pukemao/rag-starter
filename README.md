@@ -38,6 +38,11 @@ pip install "unstructured[all-docs]" pypdf beautifulsoup4 jq openpyxl xlrd pytho
 | `DASHSCOPE_EMBEDDING_DIMENSION` | `2048` | `text-embedding-v4` 输出维度 |
 | `DASHSCOPE_EMBEDDING_BATCH_SIZE` | `10` | 单次 embedding 请求文本数量，百炼要求不超过 10 |
 | `DASHSCOPE_EMBEDDING_TIMEOUT_SECONDS` | `60.0` | embedding 请求超时时间 |
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | 本地 Ollama 服务地址，`RAG_EMBEDDING_PROVIDER=ollama` 时使用 |
+| `OLLAMA_EMBEDDING_MODEL` | `qwen3-embedding:4b` | 本地 Ollama embedding 模型名称 |
+| `OLLAMA_EMBEDDING_DIMENSION` | `2560` | `qwen3-embedding:4b` 向量维度 |
+| `OLLAMA_EMBEDDING_BATCH_SIZE` | `10` | 单次发送给 Ollama 的文本数量 |
+| `OLLAMA_EMBEDDING_TIMEOUT_SECONDS` | `120.0` | Ollama embedding 请求超时时间 |
 | `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
 | `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
 | `RAG_DATABASE_URL` | `sqlite:///storage/app.db` | 会话、消息和用户设置的结构化数据库 |
@@ -126,7 +131,23 @@ print(result.ids, result.skipped_duplicates)
 results = service.search("项目背景", k=3)
 ```
 
-默认 embedding 使用阿里云百炼 `text-embedding-v4`，通过 LangChain `OpenAIEmbeddings` 连接百炼 OpenAI 兼容接口，默认输出 2048 维向量。切换 embedding 模型或维度后，需要删除旧的 Chroma 数据并重新索引知识库，因为同一个 Chroma collection 不能混用不同维度的向量。
+默认 embedding 使用阿里云百炼 `text-embedding-v4`，通过 LangChain `OpenAIEmbeddings` 连接百炼 OpenAI 兼容接口，默认输出 2048 维向量。也支持切换到本地 Ollama embedding，例如：
+
+```bash
+RAG_EMBEDDING_PROVIDER=ollama
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_EMBEDDING_MODEL=qwen3-embedding:4b
+OLLAMA_EMBEDDING_DIMENSION=2560
+```
+
+使用 Ollama 前需要先启动本地服务并确保模型已存在：
+
+```bash
+ollama serve
+ollama list
+```
+
+如果 `ollama pull qwen3-embedding:4b` 出现 `registry.ollama.ai` 超时，这是模型拉取网络问题，不是项目代码问题。模型成功下载后，项目会通过本地 `/api/embed` 接口调用，不再消耗百炼 embedding 额度。切换 embedding 模型或维度后，需要删除旧的 Chroma 数据并重新索引知识库，因为同一个 Chroma collection 不能混用不同维度的向量。
 
 RAG 增强对话链路：
 

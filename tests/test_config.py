@@ -15,6 +15,8 @@ class ConfigTests(unittest.TestCase):
         self.assertEqual(settings.embedding.provider, "dashscope")
         self.assertEqual(settings.embedding.model, "text-embedding-v4")
         self.assertEqual(settings.embedding.dimension, 2048)
+        self.assertEqual(settings.embedding.ollama_model, "qwen3-embedding:4b")
+        self.assertEqual(settings.embedding.ollama_dimension, 2560)
         self.assertEqual(settings.embedding.batch_size, 10)
         self.assertEqual(settings.rag.default_top_k, 2)
         self.assertEqual(settings.llm.provider, "deepseek")
@@ -22,7 +24,7 @@ class ConfigTests(unittest.TestCase):
         config = VectorStoreConfig()
         self.assertEqual(config.persist_directory, settings.vector_store.persist_directory)
         self.assertEqual(config.collection_name, settings.vector_store.collection_name)
-        self.assertEqual(config.embedding_dimension, settings.embedding.dimension)
+        self.assertEqual(config.embedding_dimension, settings.embedding.active_dimension)
 
 
 if __name__ == "__main__":
