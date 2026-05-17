@@ -20,10 +20,30 @@ type KnowledgeNode = {
   file: KnowledgeFile;
   extension: string;
   color: string;
+  rect: Rect;
+  sharePercent: number;
+};
+
+type KnowledgeGroup = {
+  extension: string;
+  color: string;
+  chunks: number;
+  files: KnowledgeFile[];
+  rect: Rect;
+  nodes: KnowledgeNode[];
+};
+
+type KnowledgeTreemap = {
+  groups: KnowledgeGroup[];
+  totalChunks: number;
+  totalFiles: number;
+};
+
+type Rect = {
+  x: number;
+  y: number;
+  width: number;
   height: number;
-  left: number;
-  bottom: number;
-  zIndex: number;
 };
 
 export function KnowledgeBasePage() {
@@ -67,7 +87,7 @@ export function KnowledgeBasePage() {
 
   const documents = documentsQuery.data?.files ?? [];
   const selectedFile = documents.find((file) => file.source_id === selectedSource || file.source === selectedSource) ?? null;
-  const knowledgeNodes = useMemo(() => buildKnowledgeNodes(documents), [documents]);
+  const knowledgeTreemap = useMemo(() => buildKnowledgeTreemap(documents), [documents]);
   const totalSize = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
   const results = searchMutation.data?.results ?? [];
 
@@ -180,7 +200,7 @@ export function KnowledgeBasePage() {
       </section>
 
       <KnowledgeSpace
-        nodes={knowledgeNodes}
+        treemap={knowledgeTreemap}
         documents={documents}
         totalChunks={documentsQuery.data?.total_chunks ?? 0}
         selectedSource={selectedSource}
@@ -363,7 +383,7 @@ export function KnowledgeBasePage() {
 }
 
 function KnowledgeSpace({
-  nodes,
+  treemap,
   documents,
   totalChunks,
   selectedSource,
@@ -372,7 +392,7 @@ function KnowledgeSpace({
   onSelect,
   onSearch
 }: {
-  nodes: KnowledgeNode[];
+  treemap: KnowledgeTreemap;
   documents: KnowledgeFile[];
   totalChunks: number;
   selectedSource: string | null;
@@ -383,8 +403,8 @@ function KnowledgeSpace({
 }) {
   const typeMetrics = useMemo(() => buildTypeMetrics(documents), [documents]);
   const largestFile = documents.length ? [...documents].sort((left, right) => right.chunk_count - left.chunk_count)[0] : null;
-  const visibleCount = nodes.length;
-  const hiddenCount = Math.max(0, documents.length - visibleCount);
+  const visibleCount = treemap.totalFiles;
+  const typeCount = treemap.groups.length;
 
   return (
     <Panel className="overflow-hidden">
@@ -394,55 +414,41 @@ function KnowledgeSpace({
             <span className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/10 text-primary">
               <Layers3 className="h-4 w-4" aria-hidden="true" />
             </span>
-            <PanelTitle>知识库空间</PanelTitle>
+            <PanelTitle>知识库结构地图</PanelTitle>
           </div>
-          <PanelDescription>文件显示为立体块，高度代表文本块规模，颜色代表文档类型。</PanelDescription>
+          <PanelDescription>按文档类型分组，矩形面积代表文本块规模，点击文件查看详情。</PanelDescription>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">{visibleCount ? `展示 ${visibleCount} 个文件` : "等待数据"}</Badge>
-          {hiddenCount ? <Badge variant="warning">还有 {hiddenCount} 个较小文件</Badge> : null}
+          <Badge variant="outline">{visibleCount ? `${visibleCount} 个文件` : "等待数据"}</Badge>
+          {typeCount ? <Badge variant="outline">{typeCount} 类格式</Badge> : null}
         </div>
       </PanelHeader>
       <PanelContent>
         {isLoading ? (
           <div className="flex min-h-72 items-center justify-center text-sm text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-            正在生成知识库空间
+            正在生成知识库结构地图
           </div>
         ) : documents.length ? (
           <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
-            <div className="knowledge-space-stage" aria-label="知识库立体空间图">
-              <div className="knowledge-space-ground" aria-hidden="true" />
-              <div className="knowledge-space-grid" aria-hidden="true" />
-              {nodes.map((node, index) => {
-                const source = node.file.source_id ?? node.file.source;
-                const active = selectedSource === node.file.source_id || selectedSource === node.file.source;
-                const style = {
-                  "--tower-height": `${node.height}px`,
-                  "--tower-color": node.color,
-                  "--tower-delay": `${index * 35}ms`,
-                  left: `${node.left}%`,
-                  bottom: `${node.bottom}%`,
-                  zIndex: node.zIndex
-                } as CSSProperties;
-                return (
-                  <button
-                    key={source}
-                    type="button"
-                    className={cn("knowledge-space-node", active && "is-active")}
-                    style={style}
-                    aria-label={`选择知识库文件 ${node.file.filename}`}
-                    aria-pressed={active}
-                    onClick={() => onSelect(node.file)}
-                  >
-                    <span className="knowledge-space-prism" aria-hidden="true" />
-                    <span className="knowledge-space-node-label">
-                      <span className="block truncate font-medium">{node.file.filename}</span>
-                      <span className="mt-0.5 block text-xs text-muted-foreground">{node.extension} · {node.file.chunk_count} chunks</span>
+            <div className="knowledge-treemap" aria-label="知识库结构地图">
+              {treemap.groups.map((group) => (
+                <section key={group.extension} className="knowledge-treemap-group" style={rectStyle(group.rect)} aria-label={`${group.extension} 文件组`}> 
+                  <div className="knowledge-treemap-group-header">
+                    <span className="flex min-w-0 items-center gap-2">
+                      <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ backgroundColor: group.color }} aria-hidden="true" />
+                      <span className="truncate font-semibold">{group.extension}</span>
                     </span>
-                  </button>
-                );
-              })}
+                    <span className="shrink-0 tabular-nums text-muted-foreground">{group.files.length} 文件 · {group.chunks}</span>
+                  </div>
+                  <div className="knowledge-treemap-group-body">
+                    {group.nodes.map((node) => {
+                      const active = selectedSource === node.file.source_id || selectedSource === node.file.source;
+                      return <KnowledgeTreemapNode key={node.file.source_id ?? node.file.source} node={node} active={active} onSelect={onSelect} />;
+                    })}
+                  </div>
+                </section>
+              ))}
             </div>
 
             <aside className="space-y-4" aria-label="知识库空间详情">
@@ -465,7 +471,7 @@ function KnowledgeSpace({
                   </div>
                 ) : (
                   <div className="mt-3 space-y-3">
-                    <p className="text-sm leading-6 text-muted-foreground">点击任意立体块，可把它设为当前查询范围。</p>
+                    <p className="text-sm leading-6 text-muted-foreground">点击地图中的文件矩形，可把它设为当前查询范围。</p>
                     <div className="grid grid-cols-2 gap-2 text-sm">
                       <MetricInline label="总文件" value={documents.length} />
                       <MetricInline label="总文本块" value={totalChunks} />
@@ -496,10 +502,26 @@ function KnowledgeSpace({
             </aside>
           </div>
         ) : (
-          <EmptyState title="暂无知识库空间" description="上传并索引文档后，这里会生成按文件规模展示的立体视图。" />
+          <EmptyState title="暂无知识库结构" description="上传并索引文档后，这里会按类型和文本块规模生成结构地图。" />
         )}
       </PanelContent>
     </Panel>
+  );
+}
+
+function KnowledgeTreemapNode({ node, active, onSelect }: { node: KnowledgeNode; active: boolean; onSelect: (file: KnowledgeFile) => void }) {
+  return (
+    <button
+      type="button"
+      className={cn("knowledge-treemap-node", active && "is-active")}
+      style={{ ...rectStyle(node.rect), "--node-color": node.color } as CSSProperties}
+      aria-label={`选择知识库文件 ${node.file.filename}`}
+      aria-pressed={active}
+      onClick={() => onSelect(node.file)}
+    >
+      <span className="knowledge-treemap-node-title">{node.file.filename}</span>
+      <span className="knowledge-treemap-node-meta">{node.file.chunk_count} chunks · {node.sharePercent}%</span>
+    </button>
   );
 }
 
@@ -644,26 +666,113 @@ function Metric({ label, value }: { label: string; value: string | number }) {
   );
 }
 
-function buildKnowledgeNodes(documents: KnowledgeFile[]): KnowledgeNode[] {
-  const sorted = [...documents].sort((left, right) => right.chunk_count - left.chunk_count || left.filename.localeCompare(right.filename)).slice(0, 14);
-  const maxChunks = Math.max(1, ...sorted.map((file) => file.chunk_count));
-  const columns = sorted.length <= 4 ? Math.max(1, sorted.length) : sorted.length <= 9 ? 3 : 4;
-  const rows = Math.max(1, Math.ceil(sorted.length / columns));
-
-  return sorted.map((file, index) => {
-    const column = index % columns;
-    const row = Math.floor(index / columns);
+function buildKnowledgeTreemap(documents: KnowledgeFile[]): KnowledgeTreemap {
+  const grouped = new Map<string, { extension: string; color: string; chunks: number; files: KnowledgeFile[] }>();
+  documents.forEach((file, index) => {
     const extension = extensionOf(file.filename || file.source);
-    return {
-      file,
-      extension,
-      color: colorForExtension(extension, index),
-      height: 42 + Math.round((file.chunk_count / maxChunks) * 118),
-      left: columns === 1 ? 50 : 13 + column * (74 / Math.max(1, columns - 1)),
-      bottom: rows === 1 ? 34 : 16 + (rows - 1 - row) * (60 / Math.max(1, rows - 1)),
-      zIndex: 20 + row * 5 + column
-    };
+    const current = grouped.get(extension) ?? { extension, color: colorForExtension(extension, index), chunks: 0, files: [] };
+    current.files.push(file);
+    current.chunks += Math.max(1, file.chunk_count);
+    grouped.set(extension, current);
   });
+
+  const totalChunks = [...grouped.values()].reduce((sum, group) => sum + group.chunks, 0);
+  const groupRects = layoutTreemap(
+    [...grouped.values()].map((group) => ({ key: group.extension, value: group.chunks })),
+    { x: 0, y: 0, width: 100, height: 100 }
+  );
+
+  const groups = [...grouped.values()]
+    .sort((left, right) => right.chunks - left.chunks || left.extension.localeCompare(right.extension))
+    .map((group) => {
+      const rect = groupRects.get(group.extension) ?? { x: 0, y: 0, width: 0, height: 0 };
+      const innerRect = insetRect({ x: 0, y: 0, width: 100, height: 100 }, 1.5);
+      const sortedFiles = [...group.files].sort((left, right) => right.chunk_count - left.chunk_count || left.filename.localeCompare(right.filename));
+      const nodeRects = layoutTreemap(
+        sortedFiles.map((file) => ({ key: file.source_id ?? file.source, value: Math.max(1, file.chunk_count) })),
+        innerRect
+      );
+      return {
+        extension: group.extension,
+        color: group.color,
+        chunks: group.chunks,
+        files: sortedFiles,
+        rect,
+        nodes: sortedFiles.map((file) => {
+          const source = file.source_id ?? file.source;
+          return {
+            file,
+            extension: group.extension,
+            color: group.color,
+            rect: nodeRects.get(source) ?? { x: 0, y: 0, width: 100, height: 100 },
+            sharePercent: totalChunks ? Math.max(1, Math.round((Math.max(1, file.chunk_count) / totalChunks) * 100)) : 0
+          };
+        })
+      };
+    });
+
+  return { groups, totalChunks, totalFiles: documents.length };
+}
+
+function layoutTreemap(items: Array<{ key: string; value: number }>, rect: Rect): Map<string, Rect> {
+  const result = new Map<string, Rect>();
+  const sorted = [...items].filter((item) => item.value > 0).sort((left, right) => right.value - left.value);
+  splitTreemap(sorted, rect, result);
+  return result;
+}
+
+function splitTreemap(items: Array<{ key: string; value: number }>, rect: Rect, result: Map<string, Rect>) {
+  if (!items.length || rect.width <= 0 || rect.height <= 0) {
+    return;
+  }
+  if (items.length === 1) {
+    result.set(items[0].key, rect);
+    return;
+  }
+
+  const total = items.reduce((sum, item) => sum + item.value, 0);
+  let leftTotal = 0;
+  let splitIndex = 0;
+  for (; splitIndex < items.length - 1; splitIndex += 1) {
+    const nextTotal = leftTotal + items[splitIndex].value;
+    if (Math.abs(total / 2 - nextTotal) > Math.abs(total / 2 - leftTotal) && splitIndex > 0) {
+      break;
+    }
+    leftTotal = nextTotal;
+  }
+  splitIndex = Math.max(1, splitIndex);
+  const leftItems = items.slice(0, splitIndex);
+  const rightItems = items.slice(splitIndex);
+  const leftValue = leftItems.reduce((sum, item) => sum + item.value, 0);
+  const ratio = leftValue / total;
+
+  if (rect.width >= rect.height) {
+    const leftWidth = rect.width * ratio;
+    splitTreemap(leftItems, { ...rect, width: leftWidth }, result);
+    splitTreemap(rightItems, { x: rect.x + leftWidth, y: rect.y, width: rect.width - leftWidth, height: rect.height }, result);
+  } else {
+    const topHeight = rect.height * ratio;
+    splitTreemap(leftItems, { ...rect, height: topHeight }, result);
+    splitTreemap(rightItems, { x: rect.x, y: rect.y + topHeight, width: rect.width, height: rect.height - topHeight }, result);
+  }
+}
+
+function insetRect(rect: Rect, inset: number): Rect {
+  return {
+    x: rect.x + inset,
+    y: rect.y + inset,
+    width: Math.max(0, rect.width - inset * 2),
+    height: Math.max(0, rect.height - inset * 2)
+  };
+}
+
+function rectStyle(rect: Rect): CSSProperties {
+  return {
+    left: `${rect.x}%`,
+    top: `${rect.y}%`,
+    width: `${rect.width}%`,
+    height: `${rect.height}%`
+  };
 }
 
 function buildTypeMetrics(documents: KnowledgeFile[]) {

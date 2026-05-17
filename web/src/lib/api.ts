@@ -138,6 +138,63 @@ export function chatWithAgent(input: {
   });
 }
 
+export type AgentChatStreamEvent =
+  | { event: "start"; data: Record<string, never> }
+  | { event: "delta"; data: { content: string } }
+  | { event: "done"; data: AgentChatResponse }
+  | { event: "error"; data: { message: string } };
+
+export async function chatWithAgentStream(
+  input: {
+    session_id?: string | null;
+    message: string;
+    k?: number;
+    history?: ChatHistoryMessage[];
+    file_ids?: string[];
+  },
+  onEvent: (event: AgentChatStreamEvent) => void
+) {
+  const response = await fetch(`${API_BASE_URL}/agent/chat/stream`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input)
+  });
+
+  if (!response.ok) {
+    throw await parseError(response);
+  }
+  if (!response.body) {
+    throw new ApiError("当前浏览器不支持流式响应", response.status, null);
+  }
+
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) {
+        continue;
+      }
+      onEvent(JSON.parse(trimmed) as AgentChatStreamEvent);
+    }
+  }
+
+  buffer += decoder.decode();
+  const tail = buffer.trim();
+  if (tail) {
+    onEvent(JSON.parse(tail) as AgentChatStreamEvent);
+  }
+}
+
 export function uploadChatFile(file: File) {
   const formData = new FormData();
   formData.append("file", file);

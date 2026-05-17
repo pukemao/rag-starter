@@ -37,6 +37,11 @@ class AgentExecutor(Protocol):
         """Run one agent turn."""
 
 
+class AgentStreamExecutor(Protocol):
+    def invoke_stream(self, input: dict[str, Any]):
+        """Run one agent turn and yield model deltas."""
+
+
 @dataclass(frozen=True, slots=True)
 class AgentAnswer:
     answer: str
@@ -47,6 +52,16 @@ class AgentAnswer:
     attachments: list[dict[str, Any]]
     model: str
     usage: dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class AgentStreamChunk:
+    content: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class AgentStreamResult:
+    answer: AgentAnswer
 
 
 class AgentChatService:
@@ -99,6 +114,51 @@ class AgentChatService:
             attachments=tool_context.attachments,
             model=self.llm_client.model,
             usage=usage,
+        )
+
+    def answer_stream(
+        self,
+        question: str,
+        *,
+        k: int = settings.rag.default_top_k,
+        history: list[dict[str, str]] | None = None,
+        file_ids: list[str] | None = None,
+    ):
+        normalized_question = question.strip()
+        if not normalized_question:
+            raise ValueError("message 不能为空")
+        if k <= 0:
+            raise ValueError("k 必须大于 0")
+
+        tool_context = AgentToolContext(references=[], file_ids=file_ids or [])
+        executor = self.agent_executor or self._create_agent_executor(tool_context=tool_context, k=k)
+        if not hasattr(executor, "invoke_stream"):
+            result = self.answer(normalized_question, k=k, history=history, file_ids=file_ids)
+            yield AgentStreamChunk(content=result.answer)
+            return AgentStreamResult(answer=result)
+
+        messages = self._build_messages(normalized_question, history or [])
+        stream = executor.invoke_stream({"messages": messages})
+        try:
+            while True:
+                yield AgentStreamChunk(content=next(stream))
+        except StopIteration as stop:
+            result = stop.value or {}
+
+        output_messages = result.get("messages", []) if isinstance(result, dict) else []
+        answer = self._extract_answer(output_messages)
+        usage = self._extract_usage(output_messages)
+        return AgentStreamResult(
+            answer=AgentAnswer(
+                answer=answer,
+                question=normalized_question,
+                prompt=self._prompt_snapshot(normalized_question, history or []),
+                used_rag=tool_context.used_rag or bool(tool_context.references),
+                references=tool_context.references,
+                attachments=tool_context.attachments,
+                model=self.llm_client.model,
+                usage=usage,
+            )
         )
 
     def _create_agent_executor(self, *, tool_context: AgentToolContext, k: int) -> AgentExecutor:

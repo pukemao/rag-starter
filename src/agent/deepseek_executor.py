@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Generator
 from typing import Any
 
 from langchain_core.messages import AIMessage
@@ -53,6 +54,9 @@ class DeepSeekToolCallingAgentExecutor:
             if not tool_calls:
                 break
 
+            for tool_call in tool_calls:
+                messages.append(self._run_tool_call(tool_call))
+
             if iteration == self.max_iterations - 1:
                 messages.append(
                     {
@@ -64,9 +68,6 @@ class DeepSeekToolCallingAgentExecutor:
                 final_message = self._assistant_payload(response.choices[0].message)
                 messages.append(final_message)
                 break
-
-            for tool_call in tool_calls:
-                messages.append(self._run_tool_call(tool_call))
 
         content = "" if final_message is None else str(final_message.get("content") or "").strip()
         if not content:
@@ -84,26 +85,62 @@ class DeepSeekToolCallingAgentExecutor:
             "raw_messages": messages,
         }
 
-    def _chat(self, messages: list[dict[str, Any]], *, include_tools: bool = True) -> Any:
+    def invoke_stream(self, input: dict[str, Any]) -> Generator[str, None, dict[str, Any]]:
+        messages = [{"role": "system", "content": self.system_prompt}]
+        messages.extend(self._convert_messages(input.get("messages", [])))
+
+        total_usage: dict[str, Any] = {}
+        for iteration in range(self.max_iterations):
+            response = self._chat(messages)
+            self._merge_usage(total_usage, self._usage(response))
+            assistant_payload = self._assistant_payload(response.choices[0].message)
+            tool_calls = assistant_payload.get("tool_calls") or []
+
+            if not tool_calls:
+                result = yield from self._stream_final_answer(messages, total_usage=total_usage)
+                return result
+
+            messages.append(assistant_payload)
+
+            for tool_call in tool_calls:
+                messages.append(self._run_tool_call(tool_call))
+
+            if iteration == self.max_iterations - 1:
+                messages.append(
+                    {
+                        "role": "system",
+                        "content": "你已经达到工具调用上限。请停止调用工具，直接根据以上工具结果给出最终中文回答；如果信息不足，请说明缺少哪些信息。",
+                    }
+                )
+                result = yield from self._stream_final_answer(messages, total_usage=total_usage)
+                return result
+
+        result = yield from self._stream_final_answer(messages, total_usage=total_usage)
+        return result
+
+    def _chat(self, messages: list[dict[str, Any]], *, include_tools: bool = True, stream: bool = False) -> Any:
         if not self.llm_client.api_key:
             raise LLMConfigurationError("缺少 DeepSeek API Key，请设置 DEEPSEEK_API_KEY")
 
-        try:
-            from openai import OpenAI
-        except ImportError as exc:
-            raise LLMConfigurationError("无法导入 openai。请安装依赖: pip install openai") from exc
-
-        client = OpenAI(api_key=self.llm_client.api_key, base_url=self.llm_client.base_url)
+        client = self._client()
         request_messages = [dict(message) for message in messages]
         kwargs: dict[str, Any] = {
             "model": self.llm_client.model,
             "messages": request_messages,
             "temperature": self.llm_client.temperature,
             "max_tokens": self.llm_client.max_tokens,
+            "stream": stream,
         }
         if include_tools:
             kwargs["tools"] = [self._tool_schema(tool) for tool in self.tools.values()]
         return client.chat.completions.create(**kwargs)
+
+    def _client(self) -> Any:
+        try:
+            from openai import OpenAI
+        except ImportError as exc:
+            raise LLMConfigurationError("无法导入 openai。请安装依赖: pip install openai") from exc
+        return OpenAI(api_key=self.llm_client.api_key, base_url=self.llm_client.base_url)
 
     @staticmethod
     def _convert_messages(messages: list[Any]) -> list[dict[str, str]]:
@@ -177,6 +214,75 @@ class DeepSeekToolCallingAgentExecutor:
         if isinstance(usage, dict):
             return dict(usage)
         return {}
+
+    def _stream_final_answer(
+        self,
+        messages: list[dict[str, Any]],
+        *,
+        total_usage: dict[str, Any] | None = None,
+    ) -> Generator[str, None, dict[str, Any]]:
+        final_messages = [dict(message) for message in messages]
+        final_messages.append(
+            {
+                "role": "system",
+                "content": "请基于以上上下文直接给出最终中文回答，不要继续调用工具，也不要输出内部推理过程。",
+            }
+        )
+        stream = self._chat(final_messages, include_tools=False, stream=True)
+        content_parts: list[str] = []
+        usage = dict(total_usage or {})
+        model_name = self.llm_client.model
+
+        for chunk in stream:
+            chunk_model = getattr(chunk, "model", None)
+            if chunk_model:
+                model_name = str(chunk_model)
+            self._merge_usage(usage, self._usage(chunk))
+            piece = self._stream_chunk_text(chunk)
+            if piece:
+                content_parts.append(piece)
+                yield piece
+
+        content = "".join(content_parts).strip()
+        if not content:
+            content = self._fallback_answer(messages)
+        return {
+            "messages": [
+                AIMessage(
+                    content=content,
+                    response_metadata={
+                        "model_name": model_name,
+                        "token_usage": usage,
+                    },
+                )
+            ],
+            "raw_messages": messages + [{"role": "assistant", "content": content}],
+        }
+
+    @staticmethod
+    def _stream_chunk_text(chunk: Any) -> str:
+        choices = getattr(chunk, "choices", None) or []
+        if not choices:
+            return ""
+        delta = getattr(choices[0], "delta", None)
+        if delta is None and isinstance(choices[0], dict):
+            delta = choices[0].get("delta")
+        if delta is None:
+            return ""
+        content = getattr(delta, "content", None)
+        if content is None and isinstance(delta, dict):
+            content = delta.get("content")
+        return DeepSeekClient._content_to_text(content) if content else ""
+
+    @staticmethod
+    def _merge_usage(target: dict[str, Any], source: dict[str, Any]) -> None:
+        for key, value in source.items():
+            if isinstance(value, (int, float)) and isinstance(target.get(key), (int, float)):
+                target[key] = target[key] + value
+            elif isinstance(value, (int, float)) and key not in target:
+                target[key] = value
+            else:
+                target[key] = value
 
     @staticmethod
     def _fallback_answer(messages: list[dict[str, Any]]) -> str:

@@ -107,6 +107,12 @@ class FakeAgentService:
             usage={"total_tokens": 9},
         )
 
+    def answer_stream(self, question, *, k=2, history=None, file_ids=None):
+        result = self.answer(question, k=k, history=history, file_ids=file_ids)
+        yield type("Chunk", (), {"content": "agent "})()
+        yield type("Chunk", (), {"content": "answer"})()
+        return type("StreamResult", (), {"answer": result})()
+
 
 class FakeChatFileService:
     def __init__(self) -> None:
@@ -389,6 +395,31 @@ class ApiTests(unittest.TestCase):
                 "file_ids": ["file123"],
             },
         )
+
+    def test_agent_chat_stream(self):
+        response = self.client.post(
+            "/agent/chat/stream",
+            json={
+                "message": "根据知识库说明 hello",
+                "k": 2,
+                "history": [{"role": "user", "content": "前面聊到了 a.txt"}],
+                "file_ids": ["file123"],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        lines = [line for line in response.text.splitlines() if line.strip()]
+        self.assertGreaterEqual(len(lines), 3)
+        import json
+
+        events = [json.loads(line) for line in lines]
+        self.assertEqual(events[0]["event"], "start")
+        self.assertTrue(any(event["event"] == "delta" and event["data"]["content"] for event in events))
+        self.assertEqual(events[-1]["event"], "done")
+        self.assertEqual(events[-1]["data"]["answer"], "agent answer")
+        self.assertTrue(events[-1]["data"]["used_rag"])
+        self.assertEqual(events[-1]["data"]["session"]["messages"][0]["uploaded_files"][0]["filename"], "note.md")
+        self.assertEqual(events[-1]["data"]["session"]["messages"][1]["content"], "agent answer")
 
     def test_upload_chat_file(self):
         response = self.client.post(

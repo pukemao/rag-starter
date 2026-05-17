@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from src.agent import AgentChatService
@@ -125,6 +126,32 @@ def _settings_response(user_settings: StoredUserSettings) -> UserSettingsRespons
         chat_background_opacity=user_settings.chat_background_opacity,
         updated_at=_dt(user_settings.updated_at),
     )
+
+
+def _agent_response_payload(result, session: StoredChatSession) -> AgentChatResponse:
+    return AgentChatResponse(
+        answer=result.answer,
+        question=result.question,
+        prompt=result.prompt,
+        used_rag=result.used_rag,
+        references=[
+            RagReferenceResponse(
+                index=reference.index,
+                page_content=reference.page_content,
+                metadata=reference.metadata,
+                score=reference.score,
+            )
+            for reference in result.references
+        ],
+        attachments=[GeneratedDocumentAttachmentResponse(**attachment) for attachment in result.attachments],
+        model=result.model,
+        usage=result.usage,
+        session=_session_response(session),
+    )
+
+
+def _stream_event(event: str, data: dict) -> str:
+    return json.dumps({"event": event, "data": data}, ensure_ascii=False) + "\n"
 
 
 def create_app(
@@ -454,25 +481,56 @@ def create_app(
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
-        return AgentChatResponse(
-            answer=result.answer,
-            question=result.question,
-            prompt=result.prompt,
-            used_rag=result.used_rag,
-            references=[
-                RagReferenceResponse(
-                    index=reference.index,
-                    page_content=reference.page_content,
-                    metadata=reference.metadata,
-                    score=reference.score,
+        return _agent_response_payload(result, session)
+
+    @app.post("/agent/chat/stream")
+    def agent_chat_stream(
+        request: AgentChatRequest,
+        active_agent: AgentChatService = Depends(get_agent_service),
+        active_storage: StorageService = Depends(get_storage_service),
+        active_chat_files: ChatFileService = Depends(get_chat_file_service),
+    ) -> StreamingResponse:
+        def generate():
+            yield _stream_event("start", {})
+            try:
+                uploaded_files = [file.to_dict() for file in active_chat_files.list_files(request.file_ids)]
+                stream = active_agent.answer_stream(
+                    request.message,
+                    k=request.k,
+                    history=[{"role": item.role, "content": item.content} for item in request.history],
+                    file_ids=request.file_ids,
                 )
-                for reference in result.references
-            ],
-            attachments=[GeneratedDocumentAttachmentResponse(**attachment) for attachment in result.attachments],
-            model=result.model,
-            usage=result.usage,
-            session=_session_response(session),
-        )
+                try:
+                    while True:
+                        chunk = next(stream)
+                        if chunk.content:
+                            yield _stream_event("delta", {"content": chunk.content})
+                except StopIteration as stop:
+                    stream_result = stop.value
+                result = stream_result.answer
+                references = [
+                    {
+                        "index": reference.index,
+                        "page_content": reference.page_content,
+                        "metadata": reference.metadata,
+                        "score": reference.score,
+                    }
+                    for reference in result.references
+                ]
+                session = active_storage.save_completed_turn(
+                    session_id=request.session_id,
+                    user_content=request.message,
+                    assistant_content=result.answer,
+                    mode="rag" if result.used_rag else "normal",
+                    references=references,
+                    attachments=result.attachments,
+                    user_attachments=uploaded_files,
+                )
+                yield _stream_event("done", _agent_response_payload(result, session).model_dump(mode="json"))
+            except Exception as exc:
+                yield _stream_event("error", {"message": str(exc)})
+
+        return StreamingResponse(generate(), media_type="application/x-ndjson")
 
     @app.post("/chat/files", response_model=ChatFileResponse)
     async def upload_chat_file(

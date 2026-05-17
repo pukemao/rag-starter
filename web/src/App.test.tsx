@@ -18,6 +18,85 @@ let mockSessions: unknown[] = [];
 let mockDocuments: ListDocumentsResponse = { files: [], total_files: 0, total_chunks: 0 };
 let writeTextMock: ReturnType<typeof vi.fn>;
 
+function createAgentChatPayload(body: Record<string, unknown>) {
+  const message = String(body.message ?? "测试 markdown");
+  const isRag = message.includes("RAG");
+  const uploadedFiles = Array.isArray(body.file_ids) && body.file_ids.length ? [{ file_id: "file123", filename: "note.md", size: 12, content_type: "text/markdown", status: "ready", created_at: now, chunk_count: 1, error: "" }] : [];
+  return {
+    answer: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
+    question: message,
+    prompt: "agent prompt",
+    used_rag: isRag,
+    references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
+    attachments: message.includes("文档")
+      ? [
+          {
+            file_id: "doc123",
+            filename: "测试报告.md",
+            document_type: "markdown",
+            mime_type: "text/markdown; charset=utf-8",
+            download_url: "/generated-documents/doc123/download",
+            size: 2048,
+            created_at: now
+          }
+        ]
+      : [],
+    model: "test",
+    usage: {},
+    session: {
+      id: isRag ? "rag-session" : "chat-session",
+      title: isRag ? "测试 RAG" : "测试 markdown",
+      created_at: now,
+      updated_at: now,
+      messages: [
+        {
+          id: isRag ? "u-rag" : "u-chat",
+          role: "user",
+          content: message,
+          mode: isRag ? "rag" : "normal",
+          references: [],
+          attachments: [],
+          uploaded_files: uploadedFiles,
+          created_at: now
+        },
+        {
+          id: isRag ? "a-rag" : "a-chat",
+          role: "assistant",
+          content: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
+          mode: isRag ? "rag" : "normal",
+          references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
+          attachments: message.includes("文档")
+            ? [
+                {
+                  file_id: "doc123",
+                  filename: "测试报告.md",
+                  document_type: "markdown",
+                  mime_type: "text/markdown; charset=utf-8",
+                  download_url: "/generated-documents/doc123/download",
+                  size: 2048,
+                  created_at: now
+                }
+              ]
+            : [],
+          uploaded_files: [],
+          created_at: now
+        }
+      ]
+    }
+  };
+}
+
+function createStreamResponse(payload: ReturnType<typeof createAgentChatPayload>) {
+  const answer = payload.answer;
+  const chunks = [answer.slice(0, Math.ceil(answer.length / 2)), answer.slice(Math.ceil(answer.length / 2))].filter(Boolean);
+  const lines = [
+    JSON.stringify({ event: "start", data: {} }),
+    ...chunks.map((content) => JSON.stringify({ event: "delta", data: { content } })),
+    JSON.stringify({ event: "done", data: payload })
+  ];
+  return new Response(`${lines.join("\n")}\n`, { status: 200, headers: { "Content-Type": "application/x-ndjson" } });
+}
+
 const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
   const url = String(input);
   if (url.endsWith("/chat/sessions")) {
@@ -59,74 +138,14 @@ const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => 
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
+  if (url.endsWith("/agent/chat/stream")) {
+    const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
+    return createStreamResponse(createAgentChatPayload(body));
+  }
   if (url.endsWith("/agent/chat")) {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : {};
-    const message = String(body.message ?? "测试 markdown");
-    const isRag = message.includes("RAG");
-    const uploadedFiles = Array.isArray(body.file_ids) && body.file_ids.length ? [{ file_id: "file123", filename: "note.md", size: 12, content_type: "text/markdown", status: "ready", created_at: now, chunk_count: 1, error: "" }] : [];
     return new Response(
-      JSON.stringify({
-        answer: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
-        question: message,
-        prompt: "agent prompt",
-        used_rag: isRag,
-        references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
-        attachments: message.includes("文档")
-          ? [
-              {
-                file_id: "doc123",
-                filename: "测试报告.md",
-                document_type: "markdown",
-                mime_type: "text/markdown; charset=utf-8",
-                download_url: "/generated-documents/doc123/download",
-                size: 2048,
-                created_at: now
-              }
-            ]
-          : [],
-        model: "test",
-        usage: {},
-        session: {
-          id: isRag ? "rag-session" : "chat-session",
-          title: isRag ? "测试 RAG" : "测试 markdown",
-          created_at: now,
-          updated_at: now,
-          messages: [
-            {
-              id: isRag ? "u-rag" : "u-chat",
-              role: "user",
-              content: message,
-              mode: isRag ? "rag" : "normal",
-              references: [],
-              attachments: [],
-              uploaded_files: uploadedFiles,
-              created_at: now
-            },
-            {
-              id: isRag ? "a-rag" : "a-chat",
-              role: "assistant",
-              content: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
-              mode: isRag ? "rag" : "normal",
-              references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
-              attachments: message.includes("文档")
-                ? [
-                    {
-                      file_id: "doc123",
-                      filename: "测试报告.md",
-                      document_type: "markdown",
-                      mime_type: "text/markdown; charset=utf-8",
-                      download_url: "/generated-documents/doc123/download",
-                      size: 2048,
-                      created_at: now
-                    }
-                  ]
-                : [],
-              uploaded_files: [],
-              created_at: now
-            }
-          ]
-        }
-      }),
+      JSON.stringify(createAgentChatPayload(body)),
       { status: 200, headers: { "Content-Type": "application/json" } }
     );
   }
@@ -295,7 +314,7 @@ describe("App", () => {
 
     expect(screen.getAllByText("note.md").length).toBeGreaterThan(0);
     expect(screen.getByText("上传文件 · 1 段 · 12 B")).toBeInTheDocument();
-    const agentRequest = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/agent/chat"));
+    const agentRequest = fetchMock.mock.calls.find(([input]) => String(input).endsWith("/agent/chat/stream"));
     const body = JSON.parse(String(agentRequest?.[1]?.body ?? "{}"));
     expect(body.file_ids).toEqual(["file123"]);
   });
@@ -366,11 +385,11 @@ describe("App", () => {
 
     renderApp("/knowledge");
 
-    expect(await screen.findByRole("heading", { name: "知识库空间" })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "知识库结构地图" })).toBeInTheDocument();
     await userEvent.click(await screen.findByRole("button", { name: "选择知识库文件 产品方案.md" }));
     expect(screen.getByText("当前焦点")).toBeInTheDocument();
     expect(screen.getAllByText("产品方案.md").length).toBeGreaterThan(0);
-    expect(screen.getByText(".md · 12 chunks")).toBeInTheDocument();
+    expect(screen.getByText("12 chunks · 67%")).toBeInTheDocument();
   });
 
   it("uses settings to hide rag references in chat route", async () => {

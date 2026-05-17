@@ -25,9 +25,9 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { API_BASE_URL, chatWithAgent, deleteChatSession, getChatSession, getUserSettings, listChatSessions, uploadChatFile } from "@/lib/api";
+import { API_BASE_URL, chatWithAgentStream, deleteChatSession, getChatSession, getUserSettings, listChatSessions, uploadChatFile } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import type { ChatFileResponse, ChatHistoryMessage, ChatSessionResponse, GeneratedDocumentAttachment, RagReference, UserSettingsResponse } from "@/types/api";
+import type { AgentChatResponse, ChatFileResponse, ChatHistoryMessage, ChatSessionResponse, GeneratedDocumentAttachment, RagReference, UserSettingsResponse } from "@/types/api";
 
 type ChatMode = "normal" | "rag";
 
@@ -105,6 +105,34 @@ function toUserPreferences(settings: UserSettingsResponse) {
   };
 }
 
+async function streamAgentChat(
+  input: {
+    session_id?: string | null;
+    message: string;
+    k?: number;
+    history?: ChatHistoryMessage[];
+    file_ids?: string[];
+  },
+  onDelta: (content: string) => void
+): Promise<AgentChatResponse> {
+  let finalResponse: AgentChatResponse | null = null;
+  await chatWithAgentStream(input, (event) => {
+    if (event.event === "delta") {
+      onDelta(event.data.content);
+    }
+    if (event.event === "done") {
+      finalResponse = event.data;
+    }
+    if (event.event === "error") {
+      throw new Error(event.data.message || "流式响应失败");
+    }
+  });
+  if (!finalResponse) {
+    throw new Error("流式响应未返回完整结果");
+  }
+  return finalResponse;
+}
+
 export function ChatPage() {
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [activeSessionId, setActiveSessionId] = useState("");
@@ -168,17 +196,19 @@ export function ChatPage() {
       session: ChatSession;
       userMessage: ChatMessage;
     }) => {
-      return {
-        response: await chatWithAgent({
+      const response = await streamAgentChat(
+        {
           session_id: sessionId,
           message,
           k: 2,
           history,
           file_ids: fileIds
-        })
-      };
+        },
+        (content) => appendStreamingAssistant(content)
+      );
+      return { response };
     },
-    onSuccess: ({ response }, variables) => {
+    onSuccess: ({ response }: { response: AgentChatResponse }, variables) => {
       const nextSession = response.session ? toChatSession(response.session) : completeLocalSession(variables.session, variables.userMessage, response.answer, response.used_rag ? "rag" : "normal", response.references);
       persistReturnedSession(nextSession);
     },
@@ -218,7 +248,7 @@ export function ChatPage() {
     if (typeof messageEndRef.current?.scrollIntoView === "function") {
       messageEndRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
     }
-  }, [visibleMessages.length, transientError, chatMutation.isPending]);
+  }, [visibleMessages.length, visibleMessages.at(-1)?.content, transientError, chatMutation.isPending]);
 
   useEffect(() => {
     resizeInput();
@@ -289,6 +319,24 @@ export function ChatPage() {
     setInput("");
     setAttachedFiles([]);
     chatMutation.mutate({ message, history, session, userMessage, sessionId: activeSessionId || null, fileIds: readyFileIds });
+  }
+
+  function appendStreamingAssistant(content: string) {
+    setPendingMessages((current) => {
+      const assistantIndex = current.findIndex((message) => message.role === "assistant" && message.id === "streaming-assistant");
+      if (assistantIndex >= 0) {
+        return current.map((message, index) => (index === assistantIndex ? { ...message, content: message.content + content } : message));
+      }
+      return [
+        ...current,
+        {
+          id: "streaming-assistant",
+          role: "assistant",
+          content,
+          createdAt: new Date().toISOString()
+        }
+      ];
+    });
   }
 
   function onInputChange(event: ChangeEvent<HTMLTextAreaElement>) {
