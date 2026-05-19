@@ -58,8 +58,8 @@ type UploadingChatFile = ChatFileResponse & {
 type MarkdownBlock =
   | { type: "heading"; level: 1 | 2 | 3; content: string }
   | { type: "paragraph"; content: string }
-  | { type: "ul"; items: string[] }
-  | { type: "ol"; items: string[] }
+  | { type: "ul"; items: string[][] }
+  | { type: "ol"; items: string[][] }
   | { type: "quote"; content: string }
   | { type: "code"; language: string; content: string };
 
@@ -905,7 +905,9 @@ function MarkdownContent({ content }: { content: string }) {
           return (
             <ul key={index} className="list-disc space-y-1 pl-5">
               {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+                <li key={itemIndex} className="space-y-1">
+                  {renderListItem(item)}
+                </li>
               ))}
             </ul>
           );
@@ -914,7 +916,9 @@ function MarkdownContent({ content }: { content: string }) {
           return (
             <ol key={index} className="list-decimal space-y-1 pl-5">
               {block.items.map((item, itemIndex) => (
-                <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+                <li key={itemIndex} className="space-y-1">
+                  {renderListItem(item)}
+                </li>
               ))}
             </ol>
           );
@@ -950,7 +954,8 @@ function parseMarkdown(content: string): MarkdownBlock[] {
   let codeLines: string[] | null = null;
   let codeLanguage = "";
   let listType: "ul" | "ol" | null = null;
-  let listItems: string[] = [];
+  let listItems: string[][] = [];
+  let pendingListBlank = false;
 
   function flushParagraph() {
     if (paragraph.length) {
@@ -964,7 +969,21 @@ function parseMarkdown(content: string): MarkdownBlock[] {
       blocks.push({ type: listType, items: listItems });
       listType = null;
       listItems = [];
+      pendingListBlank = false;
     }
+  }
+
+  function appendListContinuation(line: string) {
+    if (!listType || !listItems.length) {
+      return false;
+    }
+    const item = listItems[listItems.length - 1];
+    if (pendingListBlank && item[item.length - 1] !== "") {
+      item.push("");
+    }
+    item.push(line.trim());
+    pendingListBlank = false;
+    return true;
   }
 
   for (const line of lines) {
@@ -990,7 +1009,9 @@ function parseMarkdown(content: string): MarkdownBlock[] {
 
     if (!line.trim()) {
       flushParagraph();
-      flushList();
+      if (listType && listItems.length) {
+        pendingListBlank = true;
+      }
       continue;
     }
 
@@ -1009,7 +1030,8 @@ function parseMarkdown(content: string): MarkdownBlock[] {
         flushList();
         listType = "ul";
       }
-      listItems.push(unordered[1].trim());
+      pendingListBlank = false;
+      listItems.push([unordered[1].trim()]);
       continue;
     }
 
@@ -1020,7 +1042,8 @@ function parseMarkdown(content: string): MarkdownBlock[] {
         flushList();
         listType = "ol";
       }
-      listItems.push(ordered[1].trim());
+      pendingListBlank = false;
+      listItems.push([ordered[1].trim()]);
       continue;
     }
 
@@ -1029,6 +1052,10 @@ function parseMarkdown(content: string): MarkdownBlock[] {
       flushParagraph();
       flushList();
       blocks.push({ type: "quote", content: quote[1].trim() });
+      continue;
+    }
+
+    if (appendListContinuation(line)) {
       continue;
     }
 
@@ -1077,6 +1104,34 @@ function renderInlineMarkdown(text: string): ReactNode[] {
   }
 
   return nodes;
+}
+
+function renderListItem(lines: string[]) {
+  const parts: ReactNode[] = [];
+  let paragraph: string[] = [];
+
+  function flushParagraph(key: string) {
+    if (!paragraph.length) {
+      return;
+    }
+    parts.push(
+      <p key={key} className="whitespace-pre-wrap">
+        {renderInlineMarkdown(paragraph.join("\n"))}
+      </p>
+    );
+    paragraph = [];
+  }
+
+  lines.forEach((line, index) => {
+    if (!line.trim()) {
+      flushParagraph(`paragraph-${index}`);
+      return;
+    }
+    paragraph.push(line);
+  });
+  flushParagraph("paragraph-final");
+
+  return parts;
 }
 
 function toHistory(messages: ChatMessage[]): ChatHistoryMessage[] {

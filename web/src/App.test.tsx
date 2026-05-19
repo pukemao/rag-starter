@@ -22,8 +22,13 @@ function createAgentChatPayload(body: Record<string, unknown>) {
   const message = String(body.message ?? "测试 markdown");
   const isRag = message.includes("RAG");
   const uploadedFiles = Array.isArray(body.file_ids) && body.file_ids.length ? [{ file_id: "file123", filename: "note.md", size: 12, content_type: "text/markdown", status: "ready", created_at: now, chunk_count: 1, error: "" }] : [];
+  const answer = message.includes("有序列表")
+    ? "1. **第一项**\n\n    第一项说明。\n\n2. **第二项**\n\n    第二项说明。\n\n3. **第三项**\n\n    第三项说明。"
+    : isRag
+      ? "RAG 回答"
+      : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```";
   return {
-    answer: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
+    answer,
     question: message,
     prompt: "agent prompt",
     used_rag: isRag,
@@ -62,7 +67,7 @@ function createAgentChatPayload(body: Record<string, unknown>) {
         {
           id: isRag ? "a-rag" : "a-chat",
           role: "assistant",
-          content: isRag ? "RAG 回答" : "## 回答标题\n\n- 第一条\n- 第二条\n\n```python\nprint('ok')\n```",
+          content: answer,
           mode: isRag ? "rag" : "normal",
           references: isRag ? [{ index: 1, page_content: "参考内容", metadata: {}, score: 0.12 }] : [],
           attachments: message.includes("文档")
@@ -271,6 +276,19 @@ describe("App", () => {
     expect(await screen.findByRole("heading", { name: "回答标题" })).toBeInTheDocument();
     expect(screen.getByText("第一条")).toBeInTheDocument();
     expect(screen.getByText("print('ok')")).toBeInTheDocument();
+  });
+
+  it("keeps ordered markdown list numbering across item descriptions", async () => {
+    renderApp("/chat");
+    await userEvent.type(screen.getByRole("textbox", { name: "输入消息" }), "有序列表");
+    await userEvent.click(screen.getByRole("button", { name: "发送消息" }));
+
+    expect(await screen.findByText("第一项")).toBeInTheDocument();
+    expect(screen.getByText("第二项")).toBeInTheDocument();
+    expect(screen.getByText("第三项")).toBeInTheDocument();
+    const orderedLists = document.querySelectorAll("ol");
+    expect(orderedLists).toHaveLength(1);
+    expect(orderedLists[0].querySelectorAll("li")).toHaveLength(3);
   });
 
   it("copies user question and assistant answer in chat route", async () => {
