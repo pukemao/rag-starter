@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from importlib import import_module
 from pathlib import Path
+import re
 from typing import Any
 
 from langchain_core.documents import Document
@@ -13,6 +14,7 @@ from src.config import settings
 
 from .base import SplitterConfig, SplitterDependencyError
 from .excel import split_excel_file
+from .pdf import split_pdf_file
 from .word import build_word_sections, ensure_word_heading_context
 
 DEFAULT_SPLITTER = settings.splitter.default_type
@@ -28,6 +30,7 @@ _SPLITTERS: dict[str, str] = {
 _MARKDOWN_EXTENSIONS = {".md", ".markdown", ".mdx"}
 _EXCEL_EXTENSIONS = {".xls", ".xlsx"}
 _WORD_EXTENSIONS = {".doc", ".docx"}
+_PDF_EXTENSIONS = {".pdf"}
 _MARKDOWN_HEADERS = (
     ("#", "h1"),
     ("##", "h2"),
@@ -36,6 +39,7 @@ _MARKDOWN_HEADERS = (
     ("#####", "h5"),
     ("######", "h6"),
 )
+_MARKDOWN_HEADING_PATTERN = re.compile(r"^(#{1,6})\s+(.+?)\s*$")
 
 
 def supported_splitters() -> tuple[str, ...]:
@@ -121,24 +125,7 @@ def split_markdown_file(
 
     path = Path(file_path)
     text = path.read_text(encoding=encoding)
-    header_splitter_cls = _import_markdown_header_splitter()
-    header_splitter = header_splitter_cls(
-        headers_to_split_on=list(headers_to_split_on),
-        strip_headers=False,
-    )
-    sections = header_splitter.split_text(text)
-    documents = [
-        Document(
-            page_content=section.page_content,
-            metadata={
-                "source": str(path),
-                "filename": path.name,
-                "filetype": "text/markdown",
-                **dict(section.metadata),
-            },
-        )
-        for section in sections
-    ]
+    documents = _build_markdown_sections(path, text, headers_to_split_on=headers_to_split_on)
     return split_documents(
         documents,
         splitter=splitter,
@@ -147,6 +134,80 @@ def split_markdown_file(
         chunk_overlap=chunk_overlap,
         **splitter_kwargs,
     )
+
+
+def _build_markdown_sections(
+    path: Path,
+    text: str,
+    *,
+    headers_to_split_on: tuple[tuple[str, str], ...] = _MARKDOWN_HEADERS,
+) -> list[Document]:
+    supported_levels = {len(marker) for marker, _ in headers_to_split_on}
+    heading_stack: dict[int, str] = {}
+    current_lines: list[str] = []
+    current_has_body = False
+    current_heading_level: int | None = None
+    sections: list[Document] = []
+
+    def reset_current() -> None:
+        nonlocal current_lines, current_has_body, current_heading_level
+        current_lines = _markdown_heading_lines(heading_stack)
+        current_has_body = False
+        current_heading_level = max(heading_stack) if heading_stack else None
+
+    def flush() -> None:
+        nonlocal current_lines, current_has_body, current_heading_level
+        content = "\n\n".join(_dedupe_consecutive_lines(line for line in current_lines if line.strip())).strip()
+        if content:
+            sections.append(
+                Document(
+                    page_content=content,
+                    metadata=_markdown_metadata(path, heading_stack),
+                )
+            )
+        current_lines = []
+        current_has_body = False
+        current_heading_level = None
+
+    for raw_line in text.splitlines():
+        line = raw_line.rstrip()
+        match = _MARKDOWN_HEADING_PATTERN.match(line.strip())
+        if match and len(match.group(1)) in supported_levels:
+            if current_lines and current_has_body:
+                flush()
+            level = len(match.group(1))
+            heading = _plain_markdown_heading(match.group(2))
+            _apply_markdown_heading(
+                heading_stack,
+                level,
+                heading,
+                previous_level=current_heading_level,
+                previous_has_body=current_has_body,
+            )
+            reset_current()
+            continue
+
+        if not current_lines:
+            reset_current()
+        if line.strip():
+            current_has_body = True
+        current_lines.append(line)
+
+    if current_lines:
+        flush()
+
+    if sections:
+        return sections
+    return [
+        Document(
+            page_content=text.strip(),
+            metadata={
+                "source": str(path),
+                "filename": path.name,
+                "filetype": "text/markdown",
+            },
+        )
+    ]
 
 
 def split_word_file(
@@ -206,6 +267,13 @@ def load_and_split_documents(
             loader_kwargs=loader_kwargs,
             **(splitter_kwargs or {}),
         )
+    if path.suffix.lower() in _PDF_EXTENSIONS and splitter is None:
+        return split_pdf_file(
+            path,
+            chunk_size=chunk_size,
+            chunk_overlap=chunk_overlap,
+            **(splitter_kwargs or {}),
+        )
 
     documents = load_documents(file_path, **(loader_kwargs or {}))
     return split_documents(
@@ -218,15 +286,53 @@ def load_and_split_documents(
     )
 
 
-def _import_markdown_header_splitter() -> type[Any]:
-    try:
-        module = import_module("langchain_text_splitters")
-    except ImportError as exc:
-        raise SplitterDependencyError(
-            "无法导入 langchain_text_splitters。请安装依赖: pip install langchain-text-splitters"
-        ) from exc
+def _markdown_heading_lines(heading_stack: dict[int, str]) -> list[str]:
+    return [f"{'#' * level} {heading_stack[level]}" for level in sorted(heading_stack)]
 
-    splitter_cls = getattr(module, "MarkdownHeaderTextSplitter", None)
-    if splitter_cls is None:
-        raise SplitterDependencyError("langchain_text_splitters 中未找到 MarkdownHeaderTextSplitter")
-    return splitter_cls
+
+def _markdown_metadata(path: Path, heading_stack: dict[int, str]) -> dict[str, Any]:
+    metadata: dict[str, Any] = {
+        "source": str(path),
+        "filename": path.name,
+        "filetype": "text/markdown",
+    }
+    heading_lines = _markdown_heading_lines(heading_stack)
+    if heading_lines:
+        metadata["heading_context"] = "\n".join(heading_lines)
+    for level, heading in heading_stack.items():
+        metadata[f"h{level}"] = heading
+    return metadata
+
+
+def _apply_markdown_heading(
+    heading_stack: dict[int, str],
+    level: int,
+    heading: str,
+    *,
+    previous_level: int | None,
+    previous_has_body: bool,
+) -> None:
+    if previous_level == level and not previous_has_body and heading_stack.get(level):
+        level = min(level + 1, 6)
+    for existing_level in list(heading_stack):
+        if existing_level >= level:
+            heading_stack.pop(existing_level)
+    heading_stack[level] = heading
+
+
+def _plain_markdown_heading(text: str) -> str:
+    return re.sub(r"[*_`]+", "", text).strip()
+
+
+def _dedupe_consecutive_lines(lines: list[str] | tuple[str, ...] | Any) -> list[str]:
+    deduped: list[str] = []
+    previous: str | None = None
+    for line in lines:
+        current = str(line).strip()
+        if not current:
+            continue
+        if current == previous:
+            continue
+        deduped.append(current)
+        previous = current
+    return deduped

@@ -53,22 +53,25 @@ def build_word_sections_from_blocks(
     current_lines: list[str] = []
     current_metadata: dict[str, Any] = {}
     current_has_body = False
+    current_heading_level: int | None = None
 
     def reset_current() -> None:
-        nonlocal current_lines, current_metadata, current_has_body
+        nonlocal current_lines, current_metadata, current_has_body, current_heading_level
         current_lines = _heading_lines(heading_stack)
         current_metadata = _heading_metadata(path, filetype, heading_stack)
         current_has_body = False
+        current_heading_level = max(heading_stack) if heading_stack else None
 
     def flush() -> None:
-        nonlocal current_lines, current_metadata, current_has_body
-        text = "\n\n".join(line for line in current_lines if line.strip()).strip()
+        nonlocal current_lines, current_metadata, current_has_body, current_heading_level
+        text = "\n\n".join(_dedupe_consecutive_lines(line for line in current_lines if line.strip())).strip()
         if not text:
             return
         sections.append(Document(page_content=text, metadata=dict(current_metadata)))
         current_lines = []
         current_metadata = {}
         current_has_body = False
+        current_heading_level = None
 
     for block in blocks:
         text = _clean_text(block.text)
@@ -79,10 +82,7 @@ def build_word_sections_from_blocks(
             if current_lines and current_has_body:
                 flush()
             level = max(1, min(block.level or 1, 6))
-            for existing_level in list(heading_stack):
-                if existing_level >= level:
-                    heading_stack.pop(existing_level)
-            heading_stack[level] = text
+            _apply_heading(heading_stack, level, text, previous_level=current_heading_level, previous_has_body=current_has_body)
             reset_current()
             continue
 
@@ -124,7 +124,7 @@ def ensure_word_heading_context(document: Document) -> Document:
         return document
 
     content = document.page_content.strip()
-    if content.startswith(heading_context):
+    if _has_heading_prefix(content, heading_context):
         return document
 
     return Document(
@@ -200,6 +200,22 @@ def _heading_lines(heading_stack: dict[int, str]) -> list[str]:
     return [f"{'#' * level} {heading_stack[level]}" for level in sorted(heading_stack)]
 
 
+def _apply_heading(
+    heading_stack: dict[int, str],
+    level: int,
+    heading: str,
+    *,
+    previous_level: int | None,
+    previous_has_body: bool,
+) -> None:
+    if previous_level == level and not previous_has_body and heading_stack.get(level):
+        level = min(level + 1, 6)
+    for existing_level in list(heading_stack):
+        if existing_level >= level:
+            heading_stack.pop(existing_level)
+    heading_stack[level] = heading
+
+
 def _heading_metadata(path: Path, filetype: str, heading_stack: dict[int, str]) -> dict[str, Any]:
     metadata: dict[str, Any] = {
         "source": str(path),
@@ -217,3 +233,25 @@ def _heading_metadata(path: Path, filetype: str, heading_stack: dict[int, str]) 
 
 def _clean_text(text: str) -> str:
     return "\n".join(line.strip() for line in str(text).splitlines() if line.strip()).strip()
+
+
+def _dedupe_consecutive_lines(lines: list[str] | tuple[str, ...] | Any) -> list[str]:
+    deduped: list[str] = []
+    previous: str | None = None
+    for line in lines:
+        current = str(line).strip()
+        if not current:
+            continue
+        if current == previous:
+            continue
+        deduped.append(current)
+        previous = current
+    return deduped
+
+
+def _has_heading_prefix(content: str, heading_context: str) -> bool:
+    content_lines = [line.strip() for line in content.splitlines() if line.strip()]
+    heading_lines = [line.strip() for line in heading_context.splitlines() if line.strip()]
+    if not heading_lines or len(content_lines) < len(heading_lines):
+        return False
+    return content_lines[: len(heading_lines)] == heading_lines

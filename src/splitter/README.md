@@ -87,3 +87,25 @@ metadata 中会保留 `h1`、`h2` 等标题层级，便于后续展示来源或�
 这种结构保证每个 chunk 都带有文件名、工作表名和列名语义，避免 RAG 只检索到单元格值却不知道该值对应哪个字段。大表会按完整数据行分块，并在每个 chunk 中重复表头；metadata 会保留 `sheet_name`、`sheet_index`、`start_row`、`end_row`、`row_count` 等信息。
 
 `.xlsx` 使用 `openpyxl` 读取，`.xls` 使用 `xlrd` 读取。缺少依赖时会返回明确的安装提示。
+
+## PDF 优化
+
+`load_and_split_documents()` 对 `.pdf` 也有专门处理，不再直接依赖按页后的通用字符切分。当前方案优先使用 `pymupdf4llm` 将 PDF 转成接近 Markdown 的结构化文本，再按标题层级聚合为章节块，最后用 `RecursiveCharacterTextSplitter` 控制 chunk 大小。
+
+这样可以尽量保留 PDF 的标题、目录、表格和阅读顺序，减少下面这些问题：
+
+- 标题和正文被拆成不同 chunk
+- 页眉页脚和页码污染正文
+- 跨页段落被硬切断
+- 表格值失去字段语义
+
+每个 PDF chunk 会尽量保留：
+
+```text
+# 章节标题
+正文段落
+```
+
+metadata 中会保留 `page_start`、`page_end`、`pages`、`heading_context`、`h1`-`h6`、`table_count`、`chunk_type=pdf_section`，方便后续检索展示和来源定位。
+
+如果 `pymupdf4llm` 不可用，系统会明确提示安装依赖。若某些 PDF 结构非常复杂，仍可通过 `load_and_split_documents(..., splitter_type="recursive")` 回退到通用切分，但生产环境建议优先使用当前 PDF 专用链路。

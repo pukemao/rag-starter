@@ -9,6 +9,8 @@ from unittest.mock import patch
 
 from src.splitter import SplitterConfig, create_splitter, load_and_split_documents, split_documents, supported_splitters
 from src.splitter.excel import ExcelSheet, _build_excel_documents
+from src.splitter.registry import _build_markdown_sections
+from src.splitter.pdf import PdfPage, build_pdf_sections_from_pages, ensure_pdf_heading_context
 from src.splitter.word import WordBlock, build_word_sections_from_blocks, ensure_word_heading_context
 
 
@@ -100,6 +102,16 @@ class SplitterTests(unittest.TestCase):
         self.assertIn("# 标题二", chunks[1].page_content)
         self.assertIn("正文二", chunks[1].page_content)
         self.assertEqual(chunks[0].metadata["filename"], "note.md")
+
+    def test_markdown_sections_keep_container_heading_without_body(self):
+        sections = _build_markdown_sections(
+            Path("resume.md"),
+            "# 工作经历\n\n## 深圳市畅飞扬信息系统有限公司\n\n2024.11-2026.04\n\n- 负责企业级中后台系统开发",
+        )
+
+        self.assertGreaterEqual(len(sections), 1)
+        self.assertIn("# 工作经历", sections[0].page_content)
+        self.assertIn("## 深圳市畅飞扬信息系统有限公司", sections[0].page_content)
 
     def test_excel_split_keeps_header_sheet_and_row_together(self):
         chunks = _build_excel_documents(
@@ -197,6 +209,22 @@ class SplitterTests(unittest.TestCase):
         self.assertEqual(chunks[1].metadata["h2"], "实施计划")
         self.assertEqual(chunks[1].metadata["chunk_type"], "word_section")
 
+    def test_word_sections_keep_container_heading_without_body(self):
+        chunks = build_word_sections_from_blocks(
+            Path("resume.docx"),
+            [
+                WordBlock("工作经历", kind="heading", level=1),
+                WordBlock("深圳市畅飞扬信息系统有限公司全栈工程师", kind="heading", level=2),
+                WordBlock("2024.11-2026.04"),
+                WordBlock("负责企业级中后台系统开发"),
+            ],
+            filetype="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+        self.assertGreaterEqual(len(chunks), 1)
+        self.assertIn("# 工作经历", chunks[0].page_content)
+        self.assertIn("## 深圳市畅飞扬信息系统有限公司全栈工程师", chunks[0].page_content)
+
     def test_word_heading_context_is_repeated_after_recursive_split(self):
         from langchain_core.documents import Document
 
@@ -229,6 +257,46 @@ class SplitterTests(unittest.TestCase):
         self.assertEqual(len(chunks), 1)
         self.assertIn("# 标题", chunks[0].page_content)
         build_sections.assert_called_once()
+
+    def test_pdf_sections_keep_heading_with_body(self):
+        sections = build_pdf_sections_from_pages(
+            Path("report.pdf"),
+            [
+                PdfPage(
+                    page_number=1,
+                    text="# 第一章\n\n这是第一页正文。\n\n--- end of page=1 ---",
+                    metadata={"page_number": 1},
+                    toc_items=[],
+                    tables=[],
+                ),
+                PdfPage(
+                    page_number=2,
+                    text="# 第一章\n\n继续说明第二页内容。",
+                    metadata={"page_number": 2},
+                    toc_items=[],
+                    tables=[],
+                ),
+            ],
+        )
+
+        self.assertGreaterEqual(len(sections), 1)
+        self.assertIn("# 第一章", sections[0].page_content)
+        self.assertIn("这是第一页正文。", sections[0].page_content)
+        self.assertEqual(sections[0].metadata["filetype"], "application/pdf")
+        self.assertEqual(sections[0].metadata["chunk_type"], "pdf_section")
+
+    def test_pdf_heading_context_is_repeated_after_recursive_split(self):
+        from langchain_core.documents import Document
+
+        chunk = Document(
+            page_content="拆分后的正文片段",
+            metadata={"heading_context": "# 第一章"},
+        )
+
+        result = ensure_pdf_heading_context(chunk)
+
+        self.assertTrue(result.page_content.startswith("# 第一章"))
+        self.assertIn("拆分后的正文片段", result.page_content)
 
 
 if __name__ == "__main__":
