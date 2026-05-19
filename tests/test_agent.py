@@ -25,6 +25,22 @@ class FakeVectorService:
         return [SearchResult(page_content="知识库段落", metadata={"source": "doc.md"}, score=0.12)]
 
 
+class FakeRetrievalService:
+    name = "fake-retrieval"
+
+    def __init__(self) -> None:
+        self.requests = []
+        self.reranker = type("FakeReranker", (), {"name": "fake-reranker"})()
+
+    @staticmethod
+    def candidate_k_for(k):
+        return max(k, 12)
+
+    def retrieve(self, query, *, k=2, filter=None, candidate_k=None):
+        self.requests.append({"query": query, "k": k, "filter": filter, "candidate_k": candidate_k})
+        return [SearchResult(page_content="知识库段落", metadata={"source": "doc.md"}, score=0.12, rerank_score=0.98)]
+
+
 class FakeWeatherService:
     def __init__(self) -> None:
         self.requests = []
@@ -89,15 +105,20 @@ class AgentToolTests(unittest.TestCase):
 
     def test_search_knowledge_base_tool_collects_references(self):
         vector_service = FakeVectorService()
+        retrieval_service = FakeRetrievalService()
         context = AgentToolContext(references=[])
-        tool = create_agent_tools(vector_service=vector_service, context=context, default_k=2)[0]
+        tool = create_agent_tools(vector_service=vector_service, retrieval_service=retrieval_service, context=context, default_k=2)[0]
 
         output = tool.invoke({"query": "检索知识库", "k": 1})
 
         self.assertIn("知识库段落", output)
+        self.assertIn("candidate_k: 12", output)
+        self.assertIn("rerank_score: 0.98", output)
         self.assertTrue(context.used_rag)
         self.assertEqual(context.references[0].page_content, "知识库段落")
-        self.assertEqual(vector_service.search_requests[0], {"query": "检索知识库", "k": 1, "filter": None})
+        self.assertEqual(context.references[0].metadata["rerank_score"], 0.98)
+        self.assertEqual(retrieval_service.requests[0], {"query": "检索知识库", "k": 1, "filter": None, "candidate_k": None})
+        self.assertEqual(vector_service.search_requests, [])
 
     def test_weather_tools(self):
         weather_service = FakeWeatherService()

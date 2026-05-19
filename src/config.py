@@ -36,6 +36,13 @@ def _get_float(name: str, default: float) -> float:
         raise ValueError(f"环境变量 {name} 必须是数字") from exc
 
 
+def _get_bool(name: str, default: bool) -> bool:
+    raw = getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 def _get_list(name: str, default: list[str]) -> list[str]:
     raw = getenv(name)
     if raw is None or raw == "":
@@ -105,6 +112,25 @@ class RagSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class RerankerSettings:
+    provider: str = getenv("RAG_RERANKER_PROVIDER", "bge")
+    model: str = getenv("RAG_RERANKER_MODEL", "BAAI/bge-reranker-v2-m3")
+    device: str = getenv("RAG_RERANKER_DEVICE", "cpu")
+    use_fp16: bool = _get_bool("RAG_RERANKER_USE_FP16", False)
+    normalize: bool = _get_bool("RAG_RERANKER_NORMALIZE", True)
+    ollama_base_url: str = getenv("OLLAMA_RERANKER_BASE_URL", getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434"))
+    ollama_model: str = getenv("OLLAMA_RERANKER_MODEL", "dengcao/bge-reranker-v2-m3")
+    ollama_batch_size: int = _get_int("OLLAMA_RERANKER_BATCH_SIZE", 4)
+    ollama_timeout_seconds: float = _get_float("OLLAMA_RERANKER_TIMEOUT_SECONDS", 120.0)
+    max_passage_chars: int = _get_int("RAG_RERANKER_MAX_PASSAGE_CHARS", 1500)
+    min_candidate_k: int = _get_int("RAG_RETRIEVAL_MIN_CANDIDATE_K", 12)
+    candidate_multiplier: int = _get_int("RAG_RETRIEVAL_CANDIDATE_MULTIPLIER", 5)
+    max_candidate_k: int = _get_int("RAG_RETRIEVAL_MAX_CANDIDATE_K", 40)
+    tool_max_k: int = _get_int("RAG_TOOL_MAX_K", 8)
+    tool_max_calls: int = _get_int("RAG_TOOL_MAX_CALLS", 3)
+
+
+@dataclass(frozen=True, slots=True)
 class LlmSettings:
     provider: str = getenv("RAG_LLM_PROVIDER", "deepseek")
     api_key: str = getenv("DEEPSEEK_API_KEY", "")
@@ -147,6 +173,7 @@ class AppSettings:
     vector_store: VectorStoreSettings = VectorStoreSettings()
     database: DatabaseSettings = DatabaseSettings()
     rag: RagSettings = RagSettings()
+    reranker: RerankerSettings = RerankerSettings()
     llm: LlmSettings = LlmSettings()
     weather: WeatherSettings = WeatherSettings()
     generated_documents: GeneratedDocumentSettings = GeneratedDocumentSettings()

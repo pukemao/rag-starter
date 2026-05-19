@@ -229,7 +229,7 @@ class DeepSeekAgentExecutorTests(unittest.TestCase):
 
     def test_preserves_reasoning_content_when_sending_tool_result(self):
         @tool("search_knowledge_base", description="检索知识库")
-        def search_knowledge_base(query: str, k: int = 1) -> str:
+        def search_knowledge_base(query: str, k: int = 2) -> str:
             return f"参考段落: {query}, k={k}"
 
         executor = DeepSeekToolCallingAgentExecutor(

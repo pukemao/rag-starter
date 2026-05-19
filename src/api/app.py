@@ -17,6 +17,7 @@ from src.config import settings
 from src.document_generator import DocumentGeneratorService
 from src.llm import DeepSeekClient, LLMConfigurationError
 from src.rag import RagService
+from src.retrieval import RetrievalService
 from src.storage import StorageService
 from src.storage.service import StoredChatMessage, StoredChatSession, StoredUserSettings
 from src.vector_store import DuplicateFileError, VectorStoreService
@@ -161,6 +162,7 @@ def create_app(
     storage_service: StorageService | None = None,
     document_generator: DocumentGeneratorService | None = None,
     chat_file_service: ChatFileService | None = None,
+    retrieval_service: RetrievalService | None = None,
 ) -> FastAPI:
     """Create the FastAPI app.
 
@@ -177,12 +179,14 @@ def create_app(
         allow_headers=["*"],
     )
     vector_service = service or VectorStoreService()
-    active_rag_service = rag_service or RagService(vector_service=vector_service)
+    active_retrieval_service = retrieval_service or RetrievalService(vector_service=vector_service)
+    active_rag_service = rag_service or RagService(vector_service=vector_service, retrieval_service=active_retrieval_service)
     active_storage_service = storage_service or StorageService()
     active_document_generator = document_generator or DocumentGeneratorService()
     active_chat_file_service = chat_file_service or ChatFileService()
     active_agent_service = agent_service or AgentChatService(
         vector_service=vector_service,
+        retrieval_service=active_retrieval_service,
         document_generator=active_document_generator,
         chat_file_service=active_chat_file_service,
     )
@@ -192,6 +196,9 @@ def create_app(
 
     def get_rag_service() -> RagService:
         return active_rag_service
+
+    def get_retrieval_service() -> RetrievalService:
+        return active_retrieval_service
 
     def get_agent_service() -> AgentChatService:
         return active_agent_service
@@ -349,9 +356,14 @@ def create_app(
     def search(
         request: SearchRequest,
         active_service: VectorStoreService = Depends(get_service),
+        active_retrieval: RetrievalService = Depends(get_retrieval_service),
     ) -> SearchResponse:
         try:
-            results = active_service.search(request.query, k=request.k, filter=request.filter)
+            results = (
+                active_retrieval.retrieve(request.query, k=request.k, filter=request.filter)
+                if request.rerank
+                else active_service.search(request.query, k=request.k, filter=request.filter)
+            )
         except Exception as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return SearchResponse(
@@ -360,6 +372,7 @@ def create_app(
                     page_content=result.page_content,
                     metadata=result.metadata,
                     score=result.score,
+                    rerank_score=result.rerank_score,
                 )
                 for result in results
             ]

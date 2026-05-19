@@ -7,6 +7,7 @@ from typing import Any, Protocol
 
 from src.config import settings
 from src.llm import DeepSeekClient, LLMResponse
+from src.retrieval import RetrievalService
 from src.vector_store import SearchResult, VectorStoreService
 
 
@@ -55,10 +56,12 @@ class RagService:
         self,
         *,
         vector_service: VectorStoreService | None = None,
+        retrieval_service: RetrievalService | None = None,
         llm_client: ChatClient | None = None,
         system_prompt: str = settings.rag.system_prompt,
     ) -> None:
         self.vector_service = vector_service or VectorStoreService()
+        self.retrieval_service = retrieval_service or RetrievalService(vector_service=self.vector_service)
         self.llm_client = llm_client or DeepSeekClient()
         self.system_prompt = system_prompt
 
@@ -81,7 +84,7 @@ class RagService:
         if k <= 0:
             raise ValueError("k 必须大于 0")
 
-        search_results = self.vector_service.search(normalized_question, k=k, filter=filter)
+        search_results = self.retrieval_service.retrieve(normalized_question, k=k, filter=filter)
         references = self._to_references(search_results)
         prompt = self.build_prompt(normalized_question, references, history=history)
         llm_response = self.llm_client.chat(
@@ -142,18 +145,24 @@ class RagService:
 
     @staticmethod
     def _to_references(search_results: list[SearchResult]) -> list[RagReference]:
-        return [
-            RagReference(
-                index=index,
-                page_content=result.page_content,
-                metadata=result.metadata,
-                score=result.score,
+        references = []
+        for index, result in enumerate(search_results, start=1):
+            metadata = dict(result.metadata)
+            if result.rerank_score is not None:
+                metadata["rerank_score"] = result.rerank_score
+            references.append(
+                RagReference(
+                    index=index,
+                    page_content=result.page_content,
+                    metadata=metadata,
+                    score=result.score,
+                )
             )
-            for index, result in enumerate(search_results, start=1)
-        ]
+        return references
 
     @staticmethod
     def _format_reference(reference: RagReference) -> str:
         source = reference.metadata.get("source") or reference.metadata.get("source_id") or "unknown"
         score = "" if reference.score is None else f"，score={reference.score}"
-        return f"[{reference.index}] source={source}{score}\n{reference.page_content}"
+        rerank_score = "" if reference.metadata.get("rerank_score") is None else f"，rerank_score={reference.metadata['rerank_score']}"
+        return f"[{reference.index}] source={source}{score}{rerank_score}\n{reference.page_content}"

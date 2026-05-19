@@ -17,6 +17,7 @@ dependencies = [
     "openpyxl",
     "python-docx",
     "sqlalchemy",
+    "transformers<5",
     "uvicorn",
 ]
 
@@ -36,6 +37,11 @@ loaders = [
     "xlrd",
 ]
 dev = []
+reranker = [
+    "FlagEmbedding",
+    "torch",
+    "transformers<5",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

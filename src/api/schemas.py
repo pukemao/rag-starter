@@ -71,12 +71,14 @@ class SearchRequest(BaseModel):
     query: str = Field(..., min_length=1)
     k: int = Field(default=settings.rag.default_top_k, gt=0)
     filter: dict[str, Any] | None = None
+    rerank: bool = True
 
 
 class SearchResultResponse(BaseModel):
     page_content: str
     metadata: dict[str, Any] = Field(default_factory=dict)
     score: float | None = None
+    rerank_score: float | None = None
 
 
 class SearchResponse(BaseModel):

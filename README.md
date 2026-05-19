@@ -1,22 +1,26 @@
 # RAG Starter
 
-RAG Starter 是一个基于 LangChain、FastAPI、Chroma 和 React 的本地 RAG 应用模板。它提供从文档上传、内容提取、智能分割、向量入库、知识库检索，到 Agent 对话、临时附件读取、文档生成和前端用户界面的完整链路。
+RAG Starter 是一个基于 LangChain、FastAPI、Chroma 和 React 的本地 RAG/Agent 应用模板，覆盖从文档上传、解析、分割、去重、向量入库、检索重排序，到多工具 Agent 对话、文档生成、会话持久化和前端展示的完整链路。
 
-项目适合用于学习 RAG 工程实践、快速搭建本地知识库问答系统，或作为二次开发的起点。
+它适合用于：
 
-## 特性
+- 学习 RAG 工程化落地方式
+- 快速搭建企业内部知识库问答系统
+- 作为支持多文档格式、可扩展工具链的二次开发起点
+
+## 主要能力
 
 - 多格式文档加载：支持 Markdown、TXT、PDF、Word、Excel、PPT、HTML、JSON、CSV、图片 OCR 等常见格式。
-- 文档感知分割：针对 Markdown、Word、Excel 做了专门优化，减少标题、表头和正文被错误拆开的情况。
-- 本地向量数据库：默认使用 Chroma 持久化到本地目录。
-- 可切换 Embedding：支持阿里云百炼 DashScope 和本地 Ollama embedding。
-- 文件去重：上传知识库文件时按文件 hash 拒绝重复文件，文件内 chunk 去重。
-- RAG 对话：检索本地知识库后调用 LLM 生成增强回答。
-- Agent 工具调用：模型可自动决定是否调用知识库检索、读取上传附件、查询天气、生成文档等工具。
-- 临时对话附件：用户可在聊天输入框上传文件，Agent 可读取附件内容，但不会写入知识库。
-- 文档生成：支持生成 Markdown、Word、Excel、PDF，并在前端提供下载入口。
-- 前端 Web：提供状态控制台、对话、知识库管理、设置等用户端页面。
-- 本地持久化：会话、消息和用户设置使用 SQLite 保存。
+- 专项文档分割：针对 PDF、Markdown、Word、Excel 进行了结构化优化，尽量保留标题、表格、章节和正文上下文。
+- 文件级与 chunk 级去重：同一文件重复上传会被拒绝，单文件内部重复 chunk 也会被过滤。
+- 本地向量数据库：使用 Chroma 持久化存储知识库数据。
+- 双 embedding 方案：支持阿里云百炼 `text-embedding-v4` 和本地 Ollama `qwen3-embedding:4b`。
+- 两阶段检索：先向量召回更多候选，再用 reranker 精排后返回 top-n。
+- Agent 自动工具调用：模型可自动决定是否调用知识库检索、天气查询、文档生成、临时附件读取等工具。
+- 临时对话附件：聊天时上传的文件仅供当前会话读取，不进入知识库。
+- 文档生成：支持生成 Markdown、Word、Excel、PDF，并提供浏览器下载。
+- 本地持久化：会话、消息、设置等数据使用 SQLite 保存。
+- 用户端前端：提供状态控制台、对话、知识库、设置等页面。
 
 ## 技术栈
 
@@ -30,6 +34,7 @@ RAG Starter 是一个基于 LangChain、FastAPI、Chroma 和 React 的本地 RAG
 - DeepSeek OpenAI-compatible Chat API
 - DashScope OpenAI-compatible Embedding API
 - Ollama local embedding API
+- BAAI/bge-reranker-v2-m3 或本地 Ollama reranker
 
 前端：
 
@@ -53,6 +58,8 @@ rag-starter/
 │   ├── embedding/             # DashScope、Ollama、Hash embedding 实现
 │   ├── loader/                # 各类型文档加载器
 │   ├── rag/                   # RAG 问答服务
+│   ├── reranker/              # 重排序模型适配
+│   ├── retrieval/              # 召回 + rerank 检索服务
 │   ├── splitter/              # 文档分割器
 │   ├── storage/               # SQLite 会话和设置持久化
 │   └── vector_store/          # Chroma 向量库封装
@@ -85,7 +92,7 @@ Windows PowerShell：
 .venv\Scripts\Activate.ps1
 ```
 
-### 3. 安装后端依赖
+### 3. 安装依赖
 
 基础安装：
 
@@ -93,15 +100,21 @@ Windows PowerShell：
 pip install -e .
 ```
 
-如果需要尽可能覆盖更多文档格式，建议安装 loader 可选依赖：
+如果需要覆盖更多文档格式，建议安装 loader 可选依赖：
 
 ```bash
 pip install -e ".[loaders]"
 ```
 
-### 4. 配置环境变量
+如果需要启用本地 BGE 重排序模型：
 
-复制环境变量示例：
+```bash
+pip install -e ".[reranker]"
+```
+
+## 环境配置
+
+复制示例环境变量文件：
 
 ```bash
 cp .env.example .env
@@ -113,7 +126,21 @@ cp .env.example .env
 DEEPSEEK_API_KEY=your_deepseek_api_key
 ```
 
-Embedding 可选择 DashScope 或 Ollama。本地免费方案推荐 Ollama：
+### Embedding
+
+支持两种主流配置：
+
+**阿里云百炼**
+
+```env
+RAG_EMBEDDING_PROVIDER=dashscope
+DASHSCOPE_API_KEY=your_dashscope_api_key
+DASHSCOPE_BASE_URL=https://dashscope.aliyuncs.com/compatible-mode/v1
+DASHSCOPE_EMBEDDING_MODEL=text-embedding-v4
+DASHSCOPE_EMBEDDING_DIMENSION=2048
+```
+
+**本地 Ollama**
 
 ```env
 RAG_EMBEDDING_PROVIDER=ollama
@@ -122,16 +149,47 @@ OLLAMA_EMBEDDING_MODEL=qwen3-embedding:4b
 OLLAMA_EMBEDDING_DIMENSION=2560
 ```
 
-如果使用 DashScope：
+不同 embedding 模型的向量空间不兼容。切换模型或维度后，请删除旧的 Chroma 数据并重新索引知识库。
 
-```env
-RAG_EMBEDDING_PROVIDER=dashscope
-DASHSCOPE_API_KEY=your_dashscope_api_key
-DASHSCOPE_EMBEDDING_MODEL=text-embedding-v4
-DASHSCOPE_EMBEDDING_DIMENSION=2048
+```bash
+rm -rf storage/chroma
 ```
 
-### 5. 启动后端
+### 重排序模型
+
+推荐使用两阶段检索链路：
+
+1. 先从向量库召回更多候选。
+2. 再用 cross-encoder reranker 进行精排。
+3. 最后返回 top-n 结果给 RAG 或 Agent。
+
+默认支持：
+
+- `bge`：使用 `BAAI/bge-reranker-v2-m3`
+- `ollama`：使用本地 `dengcao/bge-reranker-v2-m3`
+- `disabled`：关闭重排序
+
+```env
+RAG_RERANKER_PROVIDER=bge
+RAG_RERANKER_MODEL=BAAI/bge-reranker-v2-m3
+RAG_RERANKER_DEVICE=cpu
+RAG_RERANKER_NORMALIZE=true
+RAG_RETRIEVAL_MIN_CANDIDATE_K=12
+RAG_RETRIEVAL_CANDIDATE_MULTIPLIER=5
+RAG_RETRIEVAL_MAX_CANDIDATE_K=40
+RAG_TOOL_MAX_K=8
+RAG_TOOL_MAX_CALLS=3
+```
+
+说明：
+
+- 向量检索的 `score` 是 Chroma 距离分数，越低越相近。
+- reranker 的 `rerank_score` 是相关度分数，越高越相关。
+- 工具层默认返回较小的 `k`，如果模型判断还不够，可以再次调用检索工具获取更多候选。
+
+## 启动服务
+
+### 后端
 
 ```bash
 uvicorn src.api.main:app --reload
@@ -139,7 +197,7 @@ uvicorn src.api.main:app --reload
 
 默认 API 地址：`http://127.0.0.1:8000`
 
-### 6. 启动前端
+### 前端
 
 ```bash
 cd web
@@ -155,85 +213,122 @@ npm run dev
 VITE_API_BASE_URL=http://127.0.0.1:8000
 ```
 
-## 使用 Ollama 本地 Embedding
-
-项目支持通过 Ollama 调用本地 embedding 模型，例如 `qwen3-embedding:4b`。
-
-确认 Ollama 服务运行：
-
-```bash
-ollama list
-```
-
-如果执行 `ollama serve` 时出现：
-
-```text
-listen tcp 127.0.0.1:11434: bind: address already in use
-```
-
-说明 Ollama 服务已经在本机运行，不需要重复启动。
-
-如果模型尚未下载：
-
-```bash
-ollama pull qwen3-embedding:4b
-```
-
-注意：切换 embedding 模型或向量维度后，必须删除旧的 Chroma 数据并重新索引知识库，因为不同 embedding 模型的向量空间不兼容。
-
-```bash
-rm -rf storage/chroma
-```
-
 ## 核心工作流
 
-### 知识库索引
-
-用户上传文件后，系统会执行：
+### 1. 知识库索引
 
 ```text
-上传文件 -> 文档加载 -> 文档分割 -> 文件去重/chunk 去重 -> embedding -> 写入 Chroma
+上传文件 -> loader 解析 -> splitter 分割 -> 文件级去重 -> chunk 级去重 -> embedding -> 写入 Chroma
 ```
 
-### RAG 对话
+### 2. 检索增强生成
 
 ```text
-用户问题 -> embedding -> Chroma 相似度检索 -> 参考段落 -> Prompt 组装 -> LLM -> 回答
+用户问题 -> embedding -> 向量召回候选 -> reranker 精排 -> Prompt 组装 -> LLM -> 回答
 ```
 
-### Agent 对话
+### 3. Agent 对话
 
-Agent 会根据用户问题和工具描述自动判断是否调用工具：
+Agent 不再要求用户手动选择 LLM 或 RAG 模式，而是根据问题和工具描述自动判断是否调用工具。
 
-- `search_knowledge_base`：检索本地知识库。
-- `read_uploaded_document`：读取当前对话临时上传的文件。
-- `generate_document`：生成 Markdown、Word、Excel、PDF 文档。
-- `get_current_date`：获取当前日期。
-- `get_current_location_city`：获取默认城市。
-- `query_weather`：查询天气。
+当前内置工具包括：
 
-### 临时对话附件
+- `search_knowledge_base`：检索本地知识库
+- `read_uploaded_document`：读取当前对话上传文件
+- `generate_document`：生成文档
+- `get_current_date`：获取当前日期
+- `get_current_location_city`：获取默认城市
+- `query_weather`：查询天气
 
-聊天输入框左侧的 `+` 菜单支持添加文件，也支持拖拽文件到输入区域。临时附件只服务当前对话，不会写入知识库，也不会进入 Chroma。
+### 4. 临时附件
 
-```text
-上传临时文件 -> 加载并分割 -> Agent 工具按需读取 -> 回答问题
-```
+聊天输入框支持左侧 `+` 菜单添加文件，也支持拖拽上传。临时附件仅服务当前会话，不会进入知识库。
 
-### 文档生成
+### 5. 文档生成
 
-Agent 可根据用户要求生成可下载文档：
-
-```text
-用户要求生成文档 -> 模型整理内容 -> generate_document 工具 -> 保存文件 -> 前端附件卡片下载
-```
+Agent 可以把对话内容或分析结果转成文档并提供下载。
 
 支持格式：
 
-- Markdown：`.md`
-- Word：`.docx`
-- Excel：`.xlsx`
-- PDF：`.pdf`
+- `.md`
+- `.docx`
+- `.xlsx`
+- `.pdf`
+
+## 分割器说明
+
+`src/splitter` 提供统一的文档分割入口，并对 PDF、Word、Markdown、Excel 做了专项处理。
+
+### 默认分割逻辑
+
+- 通用文本优先使用递归字符分割。
+- Markdown / Word / PDF 使用标题树结构保留章节语义。
+- Excel 按工作表、表头、数据行组织为可检索文本。
+
+### Markdown / Word / PDF 优化
+
+这三类文档不再简单按字符硬切，而是尽量保留：
+
+- 标题与正文的上下文关系
+- 同级章节的语义边界
+- 连续标题和空正文的结构信息
+- 表格、页码、章节来源等 metadata
+
+这样可以减少“标题和正文被拆到不同 chunk”导致的检索失真。
+
+### PDF 处理
+
+PDF 解析优先使用结构化文本提取，再按章节聚合为 chunk，尽量保留页面范围、标题层级和表格信息。
+
+更多实现说明见：
+
+- [src/loader/README.md](src/loader/README.md)
+- [src/splitter/README.md](src/splitter/README.md)
+
+## 前端页面
+
+当前前端包含以下页面：
+
+- **状态**：系统控制台，展示知识库、会话、服务状态和数据概览。
+- **对话**：Agent 对话页，支持上下文记忆、临时附件、流式输出、Markdown 渲染和结果复制。
+- **知识库**：文件列表、上传、查询、删除，并提供结构化知识库展示视图。
+- **设置**：RAG 参考段落开关和聊天背景个性化配置。
+
+## 界面预览
+
+### 状态控制台
+
+![状态控制台](data/001.png)
+
+### 对话页面
+
+Agent 生成文档并返回下载结果：
+
+![对话页面-文档生成](data/002.png)
+
+RAG 命中知识库后展示参考段落：
+
+![对话页面-RAG参考段落](data/003.png)
+
+### 知识库页面
+
+知识库结构地图：
+
+![知识库结构地图](data/004.png)
+
+知识库文件列表：
+
+![知识库文件列表](data/005.png)
+
+### 设置页面
+
+RAG 参考段落显示开关：
+
+![设置页面-配置](data/006.png)
+
+聊天背景个性化配置：
+
+![设置页面-个性化](data/007.png)
 
 ## API 概览
 
@@ -278,58 +373,23 @@ Agent 可根据用户要求生成可下载文档：
 | `GET` | `/settings` | 获取用户设置 |
 | `PUT` | `/settings` | 更新用户设置 |
 
-## API 示例
-
-上传并索引知识库文件：
-
-```bash
-curl -X POST http://127.0.0.1:8000/index \
-  -F "files=@docs/report.pdf" \
-  -F "splitter_type=recursive" \
-  -F "chunk_size=1000" \
-  -F "chunk_overlap=200"
-```
-
-检索知识库：
-
-```bash
-curl -X POST http://127.0.0.1:8000/search \
-  -H "Content-Type: application/json" \
-  -d '{"query":"项目背景","k":3}'
-```
-
-Agent 对话：
-
-```bash
-curl -X POST http://127.0.0.1:8000/agent/chat \
-  -H "Content-Type: application/json" \
-  -d '{"message":"根据知识库总结项目背景","k":2,"history":[]}'
-```
-
-上传对话临时附件：
-
-```bash
-curl -X POST http://127.0.0.1:8000/chat/files \
-  -F "file=@docs/report.pdf"
-```
-
 ## 配置说明
 
-所有运行配置集中在 [src/config.py](src/config.py)，可通过环境变量覆盖。
+所有运行配置集中在 [src/config.py](src/config.py)。常用配置如下：
 
-### 常用配置
+### 基础配置
 
 | 环境变量 | 默认值 | 说明 |
 | --- | --- | --- |
 | `RAG_API_TITLE` | `RAG Starter API` | FastAPI 标题 |
-| `RAG_CORS_ORIGINS` | `http://localhost:5173,...` | 允许访问 API 的前端来源，逗号分隔 |
+| `RAG_CORS_ORIGINS` | `http://localhost:5173,...` | 允许访问 API 的前端来源 |
 | `RAG_DATABASE_URL` | `sqlite:///storage/app.db` | SQLite 数据库地址 |
 | `RAG_CHROMA_PERSIST_DIRECTORY` | `storage/chroma` | Chroma 持久化目录 |
 | `RAG_CHROMA_COLLECTION_NAME` | `documents` | Chroma collection 名称 |
-| `RAG_TOP_K` | `2` | 默认检索段落数 |
 | `RAG_SPLITTER_TYPE` | `recursive` | 默认分割器 |
 | `RAG_CHUNK_SIZE` | `1000` | 默认 chunk 大小 |
 | `RAG_CHUNK_OVERLAP` | `200` | 默认 chunk 重叠 |
+| `RAG_TOP_K` | `2` | RAG 默认返回段落数 |
 
 ### LLM 配置
 
@@ -357,6 +417,21 @@ curl -X POST http://127.0.0.1:8000/chat/files \
 | `OLLAMA_EMBEDDING_DIMENSION` | `2560` | Ollama 向量维度 |
 | `OLLAMA_EMBEDDING_BATCH_SIZE` | `10` | Ollama 单批数量 |
 
+### Reranker 配置
+
+| 环境变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `RAG_RERANKER_PROVIDER` | `bge` | 重排序提供方 |
+| `RAG_RERANKER_MODEL` | `BAAI/bge-reranker-v2-m3` | BGE 重排序模型 |
+| `RAG_RERANKER_DEVICE` | `cpu` | 本地推理设备 |
+| `RAG_RERANKER_USE_FP16` | `false` | 是否使用 FP16 |
+| `RAG_RERANKER_NORMALIZE` | `true` | 是否归一化 rerank 分数 |
+| `RAG_RETRIEVAL_MIN_CANDIDATE_K` | `12` | 向量召回候选段落下限 |
+| `RAG_RETRIEVAL_CANDIDATE_MULTIPLIER` | `5` | 根据请求 `k` 放大候选召回数量 |
+| `RAG_RETRIEVAL_MAX_CANDIDATE_K` | `40` | 向量召回候选段落上限 |
+| `RAG_TOOL_MAX_K` | `8` | Agent 单次知识库工具最多返回段落数 |
+| `RAG_TOOL_MAX_CALLS` | `3` | Agent 单轮最多调用知识库检索工具次数 |
+
 ### 文件目录配置
 
 | 环境变量 | 默认值 | 说明 |
@@ -364,76 +439,6 @@ curl -X POST http://127.0.0.1:8000/chat/files \
 | `RAG_GENERATED_DOCUMENT_DIRECTORY` | `storage/generated_documents` | Agent 生成文档目录 |
 | `RAG_CHAT_UPLOAD_DIRECTORY` | `storage/chat_uploads` | 对话临时附件目录 |
 | `RAG_CHAT_UPLOAD_MAX_SIZE_MB` | `20` | 单个临时附件最大体积 |
-
-## 支持的文档格式
-
-已注册的文件扩展名包括：
-
-```text
-txt, log, csv, tsv, json, jsonl, ndjson, pdf, md, markdown, mdx,
-html, htm, mht, mhtml, xml, doc, docx, ppt, pptx, xls, xlsx,
-eml, msg, chm, epub, odt, org, rst, rtf, srt,
-jpg, jpeg, png, tif, tiff, bmp, heic, ipynb, toml, yaml, yml,
-以及常见源码文件
-```
-
-更多加载器和分割器说明见：
-
-- [src/loader/README.md](src/loader/README.md)
-- [src/splitter/README.md](src/splitter/README.md)
-
-## 前端页面
-
-前端位于 [web](web)，当前包含：
-
-- 状态：系统控制台，展示知识库、会话、系统链路等状态。
-- 对话：Agent 对话页，支持上下文记忆、临时附件上传、文档生成下载、Markdown 渲染。
-- 知识库：文件列表、上传、查询、删除，并提供按文件类型和 chunk 规模生成的立体知识库空间视图，点击文件块可快速限定查询范围。
-- 设置：RAG 参考段落显示开关、聊天背景个性化配置。
-
-## 界面预览
-
-### 状态控制台
-
-系统控制台用于集中展示服务状态、知识库规模、会话活跃情况和知识库格式分布。
-
-![状态控制台](data/001.png)
-
-### 对话页面
-
-对话页面支持 Agent 智能问答、上下文记忆、临时文件上传、流式回答、Markdown 渲染和结果复制。
-
-Agent 生成文档并返回下载结果：
-
-![对话页面-文档生成](data/002.png)
-
-RAG 命中知识库后展示参考段落：
-
-![对话页面-RAG参考段落](data/003.png)
-
-### 知识库页面
-
-知识库页面支持上传文件、查询知识库、删除文件，并提供结构地图和文件列表两种视角。
-
-知识库结构地图：
-
-![知识库结构地图](data/004.png)
-
-知识库文件列表：
-
-![知识库文件列表](data/005.png)
-
-### 设置页面
-
-设置页面支持对 RAG 参考段落显示和聊天界面个性化进行配置。
-
-RAG 参考段落显示开关：
-
-![设置页面-配置](data/006.png)
-
-聊天背景个性化配置：
-
-![设置页面-个性化](data/007.png)
 
 ## 测试
 
@@ -465,16 +470,7 @@ npm run build
 - 对话临时附件不会自动进入知识库。
 - 生成文档接口仅返回本地生成文件下载地址。
 
-## Roadmap
-
-- 支持更多 LLM provider。
-- 支持临时附件的会话级生命周期清理。
-- 支持更多文档生成模板。
-- 支持 Docker Compose 一键启动。
-- 支持可配置的 Agent 工具开关和权限控制。
-- 增加端到端测试。
-
-## Contributing
+## 贡献
 
 欢迎提交 issue 和 pull request。建议在提交前运行：
 

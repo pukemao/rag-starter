@@ -38,6 +38,7 @@ class SearchResult:
     page_content: str
     metadata: dict[str, Any] = field(default_factory=dict)
     score: float | None = None
+    rerank_score: float | None = None
 
 
 @dataclass(frozen=True, slots=True)

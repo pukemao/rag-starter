@@ -9,6 +9,20 @@ from src.rag import RagAnswer, RagReference
 from src.vector_store import IndexResult, SearchResult
 
 
+class FakeRetrievalService:
+    def __init__(self, vector_service=None) -> None:
+        self.vector_service = vector_service
+        self.retrieve_requests = []
+
+    @staticmethod
+    def candidate_k_for(k):
+        return max(k, 12)
+
+    def retrieve(self, query, *, k=2, filter=None, candidate_k=None):
+        self.retrieve_requests.append({"query": query, "k": k, "filter": filter, "candidate_k": candidate_k})
+        return [SearchResult(page_content="reranked hello", metadata={"source": "b.txt"}, score=0.4, rerank_score=0.95)]
+
+
 class FakeService:
     def __init__(self) -> None:
         self.add_requests = []
@@ -167,6 +181,7 @@ class ApiTests(unittest.TestCase):
         self.rag_service = FakeRagService()
         self.agent_service = FakeAgentService()
         self.chat_file_service = FakeChatFileService()
+        self.retrieval_service = FakeRetrievalService(self.service)
         self.storage_service = StorageService(create_session_factory("sqlite:///:memory:"))
         self.client = TestClient(
             create_app(
@@ -175,6 +190,7 @@ class ApiTests(unittest.TestCase):
                 agent_service=self.agent_service,
                 chat_file_service=self.chat_file_service,
                 storage_service=self.storage_service,
+                retrieval_service=self.retrieval_service,
             )
         )
 
@@ -289,7 +305,17 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         self.assertEqual(
             response.json(),
-            {"results": [{"page_content": "hello", "metadata": {"source": "a.txt"}, "score": 0.5}]},
+            {"results": [{"page_content": "reranked hello", "metadata": {"source": "b.txt"}, "score": 0.4, "rerank_score": 0.95}]},
+        )
+        self.assertEqual(self.retrieval_service.retrieve_requests[0], {"query": "hello", "k": 1, "filter": None, "candidate_k": None})
+
+    def test_search_can_disable_rerank(self):
+        response = self.client.post("/search", json={"query": "hello", "k": 1, "rerank": False})
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response.json(),
+            {"results": [{"page_content": "hello", "metadata": {"source": "a.txt"}, "score": 0.5, "rerank_score": None}]},
         )
 
     def test_chat(self):
